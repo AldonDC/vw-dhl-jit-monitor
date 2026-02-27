@@ -1,0 +1,5 @@
+/* Cleaned up App.css to allow full-screen dashboard layout */
+#root {
+  width: 100%;
+  height: 100%;
+}
