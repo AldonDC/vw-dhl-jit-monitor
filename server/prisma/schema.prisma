@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  code      String?  @unique // 6001008710 o similar si aplica como ID proveedor
+  routes    Route[]
+  parts     Part[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Route {
+  id          String                 @id @default(cuid())
+  code        String // "T28"
+  supplierId  String
+  supplier    Supplier               @relation(fields: [supplierId], references: [id])
+  vehicleId   String?
+  vehicle     Vehicle?               @relation(fields: [vehicleId], references: [id])
+  trips       Trip[]
+  simulations DailyRouteSimulation[]
+  geometries  RouteGeometry[]
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@unique([code, supplierId])
+}
+
+model Vehicle {
+  id        String   @id @default(cuid())
+  unitType  String? // "5 TON"
+  plate     String?
+  routes    Route[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Location {
+  id        String       @id @default(cuid())
+  name      String
+  lat       Float?
+  lng       Float?
+  type      LocationType
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  tripStops TripStop[]
+  tripZones Trip[]     @relation("TripLogisticZone")
+  partZones PartZone[]
+
+  @@unique([name, type])
+}
+
+enum LocationType {
+  SUPPLIER
+  VW
+  LOGISTIC_ZONE
+  OTHER
+}
+
+model Trip {
+  id             String     @id @default(cuid())
+  routeId        String
+  route          Route      @relation(fields: [routeId], references: [id])
+  tripCode       String // "T28-01"
+  turno          Int // 1|2|3
+  planned        Boolean    @default(true)
+  serviceDate    DateTime // dia operativo (YYYY-MM-DD)
+  departAt       DateTime
+  arriveAt       DateTime
+  logisticZoneId String?
+  logisticZone   Location?  @relation("TripLogisticZone", fields: [logisticZoneId], references: [id])
+  stops          TripStop[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@unique([routeId, tripCode, serviceDate])
+  @@index([serviceDate])
+}
+
+model TripStop {
+  id         String    @id @default(cuid())
+  tripId     String
+  trip       Trip      @relation(fields: [tripId], references: [id])
+  locationId String
+  location   Location  @relation(fields: [locationId], references: [id])
+  order      Int
+  arriveAt   DateTime?
+  departAt   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([tripId, order])
+  @@index([locationId])
+}
+
+model DailyRouteSimulation {
+  id                String   @id @default(cuid())
+  routeId           String
+  route             Route    @relation(fields: [routeId], references: [id])
+  serviceDate       DateTime // dia operativo (YYYY-MM-DD)
+  cycleNumber       Int
+  turno             Int // 1|2|3
+  supplierArriveAt  DateTime
+  supplierDepartAt  DateTime
+  vwArriveAt        DateTime
+  vwDepartAt        DateTime
+  logisticZoneLabel String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([routeId, serviceDate, cycleNumber])
+  @@index([serviceDate])
+}
+
+model RouteGeometry {
+  id      String @id @default(cuid())
+  routeId String
+  route   Route  @relation(fields: [routeId], references: [id])
+
+  // Guarda polyline de Google o array comprimido
+  source          GeometrySource
+  encodedPolyline String? // Google overview_polyline.points
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+enum GeometrySource {
+  GOOGLE
+  MANUAL
+}
+
+model Part {
+  id          String     @id @default(cuid())
+  np          String // numero de parte
+  description String?
+  supplierId  String
+  supplier    Supplier   @relation(fields: [supplierId], references: [id])
+  partZones   PartZone[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([np, supplierId])
+}
+
+enum CoverageStatus {
+  CUBIERTO
+  RIESGO
+  CRITICO
+}
+
+model PartZone {
+  id             String              @id @default(cuid())
+  partId         String
+  part           Part                @relation(fields: [partId], references: [id])
+  logisticZoneId String
+  logisticZone   Location            @relation(fields: [logisticZoneId], references: [id])
+  status         CoverageStatus?
+  capacityStatus String? // "Estatus cap" del Excel
+  snapshots      InventorySnapshot[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@unique([partId, logisticZoneId])
+}
+
+model InventorySnapshot {
+  id            String          @id @default(cuid())
+  partZoneId    String
+  partZone      PartZone        @relation(fields: [partZoneId], references: [id])
+  date          DateTime // día (YYYY-MM-DD)
+  stockTotal    Int?
+  stockZone     Int?
+  stockSupplier Int?
+  usedThatDay   Int?
+  saldo         Int?
+  projected     Boolean         @default(false)
+  status        CoverageStatus?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([partZoneId, date])
+  @@index([date])
+  @@index([projected])
+}

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Route as RouteIcon, MapPin, Bell, Sun, Moon, Menu } from 'lucide-react';
+import { LayoutDashboard, Route as RouteIcon, MapPin, Bell, Sun, Moon, Menu, Database } from 'lucide-react';
 import { useTheme } from './hooks/useTheme';
 import { ALERTS_DATA } from './data/mockData';
 import { motion, AnimatePresence } from 'framer-motion';
 import logoVw from './assets/logo-vw.png';
+import type { Alert, InventoryProjectionPlan, RouteDelayAssignment } from './types';
 
 // Component Imports
 import { NavItem } from './components/NavItem';
@@ -14,17 +15,26 @@ import { Dashboard } from './pages/Dashboard';
 import { RouteCycles } from './pages/RouteCycles';
 import { Geolocation } from './pages/Geolocation';
 import { Alerts } from './pages/Alerts';
+import { Simulation } from './pages/Simulation';
+import { DriverPortal } from './pages/DriverPortal';
 
 const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const [activePage, setActivePage] = useState('torre');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [delayAssignments, setDelayAssignments] = useState<Record<string, RouteDelayAssignment>>({});
+  const [inventoryProjection, setInventoryProjection] = useState<InventoryProjectionPlan | null>(null);
+  const [visibleDelayKeys, setVisibleDelayKeys] = useState<string[]>([]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    setVisibleDelayKeys((prev) => prev.filter((key) => key in delayAssignments));
+  }, [delayAssignments]);
 
   const getTurno = () => {
     const hr = currentTime.getHours();
@@ -34,6 +44,27 @@ const App: React.FC = () => {
   };
 
   const turno = getTurno();
+  const pageTitleByKey: Record<string, string> = {
+    torre: 'Central Intelligence',
+    ruta: 'Route Analytics',
+    mapa: 'Global Geolocation',
+    alertas: 'Extreme Alerts',
+    simulacion: 'Simulation Matrix',
+    dhl: 'Driver Validation',
+  };
+
+  const generatedDelayAlerts: Alert[] = Object.values(delayAssignments)
+    .sort((a, b) => (a.appliedAt < b.appliedAt ? 1 : -1))
+    .map((delay) => ({
+      id: `delay-${delay.serviceDate ?? 'base'}-${delay.rowId}`,
+      type: delay.minutes >= 40 ? 'crit' : delay.minutes >= 20 ? 'warn' : 'info',
+      title: `${delay.eventLabel?.trim() ? delay.eventLabel : 'Demora pendiente'} (+${delay.minutes} min)`,
+      desc: `Ciclo ${delay.cycleNumber} en ${delay.routeCode}${delay.serviceDate ? ` (${new Date(delay.serviceDate).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })})` : ''}: afectacion en tramo salida proveedor -> llegada VW. ${delay.eventLabel?.trim() ? '' : 'Motivo del conductor: pendiente.'}`,
+      time: new Date(delay.appliedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      route: `${delay.routeCode}-C${String(delay.cycleNumber).padStart(2, '0')}${delay.serviceDate ? `-${new Date(delay.serviceDate).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit' })}` : ''}`,
+    }));
+
+  const alertsBadgeCount = ALERTS_DATA.length + generatedDelayAlerts.length;
 
   return (
     <div className={`flex h-screen w-full font-sans selection:bg-blue-500/30 overflow-hidden relative ${theme === 'dark' ? 'dark' : ''}`}>
@@ -89,7 +120,14 @@ const App: React.FC = () => {
             active={activePage === 'alertas'}
             collapsed={!isSidebarOpen}
             onClick={() => setActivePage('alertas')}
-            badge={ALERTS_DATA.length}
+            badge={alertsBadgeCount}
+          />
+          <NavItem
+            icon={<Database size={24} />}
+            label="Simulation"
+            active={activePage === 'simulacion'}
+            collapsed={!isSidebarOpen}
+            onClick={() => setActivePage('simulacion')}
           />
         </nav>
 
@@ -106,7 +144,12 @@ const App: React.FC = () => {
             </div>
           )}
           <div className={`flex ${isSidebarOpen ? 'flex-row gap-4' : 'flex-col gap-2'} justify-center items-center`}>
-            <span className={`${isSidebarOpen ? 'flex-1' : 'w-12'} text-center py-2.5 bg-yellow-400 text-black text-[10px] font-black rounded-xl uppercase shadow-lg shadow-yellow-400/20 active:scale-95 transition-transform`}>DHL</span>
+            <button
+              onClick={() => setActivePage('dhl')}
+              className={`${isSidebarOpen ? 'flex-1' : 'w-12'} text-center py-2.5 bg-yellow-400 text-black text-[10px] font-black rounded-xl uppercase shadow-lg shadow-yellow-400/20 active:scale-95 transition-transform ${activePage === 'dhl' ? 'ring-2 ring-offset-2 ring-yellow-300 ring-offset-transparent' : ''}`}
+            >
+              DHL
+            </button>
             <span className={`${isSidebarOpen ? 'flex-1' : 'w-12 h-9'} flex items-center justify-center py-2.5 bg-white text-[#001e50] text-[10px] font-black rounded-xl uppercase shadow-lg shadow-black/10 active:scale-95 transition-transform overflow-hidden`}>
               <img src={logoVw} alt="VW" className="h-4 object-contain" />
             </span>
@@ -132,9 +175,7 @@ const App: React.FC = () => {
                 <span className="text-[10px] font-black text-slate-400 tracking-[0.2em] uppercase leading-none">PUEBLA STATION</span>
               </div>
               <h1 className="text-3xl font-black italic uppercase tracking-tighter text-[var(--text-primary)] mt-2">
-                {activePage === 'torre' ? 'Central Intelligence' :
-                  activePage === 'ruta' ? 'Route Analytics' :
-                    activePage === 'mapa' ? 'Global Geolocation' : 'Extreme Alerts'}
+                {pageTitleByKey[activePage] ?? 'Central Intelligence'}
               </h1>
             </div>
           </div>
@@ -179,20 +220,54 @@ const App: React.FC = () => {
 
         {/* Page Content */}
         <div className="flex-1 overflow-y-auto p-14 custom-scrollbar relative">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activePage}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.4, ease: "easeOut" }}
-            >
-              {activePage === 'torre' && <Dashboard theme={theme} />}
-              {activePage === 'ruta' && <RouteCycles />}
-              {activePage === 'mapa' && <Geolocation theme={theme} />}
-              {activePage === 'alertas' && <Alerts />}
-            </motion.div>
-          </AnimatePresence>
+          <div className={activePage === 'ruta' ? 'block' : 'hidden'}>
+            <RouteCycles
+              delayAssignments={delayAssignments}
+              projectionPlan={inventoryProjection}
+              onProjectionPlanChange={setInventoryProjection}
+              onOpenDriverPage={() => setActivePage('dhl')}
+              onRevealDelay={(key) => {
+                setVisibleDelayKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
+              }}
+            />
+          </div>
+
+          {activePage !== 'ruta' && (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activePage}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+              >
+                {activePage === 'torre' && <Dashboard theme={theme} />}
+                {activePage === 'mapa' && <Geolocation theme={theme} />}
+                {activePage === 'alertas' && (
+                  <Alerts
+                    generatedAlerts={generatedDelayAlerts}
+                    projectionPlan={inventoryProjection}
+                  />
+                )}
+                {activePage === 'simulacion' && (
+                  <Simulation
+                    delayAssignments={delayAssignments}
+                    onDelayAssignmentsChange={setDelayAssignments}
+                    projectionPlan={inventoryProjection}
+                    onProjectionPlanChange={setInventoryProjection}
+                  />
+                )}
+                {activePage === 'dhl' && (
+                  <DriverPortal
+                    delayAssignments={delayAssignments}
+                    onDelayAssignmentsChange={setDelayAssignments}
+                    projectionPlan={inventoryProjection}
+                    visibleDelayKeys={visibleDelayKeys}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          )}
         </div>
       </main>
     </div>

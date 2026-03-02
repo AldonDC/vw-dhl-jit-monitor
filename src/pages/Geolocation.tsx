@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
-import { LOCATIONS, VEHICLES } from '../data/mockData';
+import { LOCATIONS, VEHICLES, ROUTE_PATHS, TRIPS_T28 } from '../data/mockData';
 import logoVw from '../assets/logo-vw.png';
 import L from 'leaflet';
 import { Map as MapIcon, Layers, Navigation, Compass } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
+
 
 // --- HELPER COMPONENT TO CONTROL THE MAP ---
 const MapController = ({ center, zoom }: { center: [number, number], zoom: number }) => {
@@ -60,13 +61,131 @@ const vwMarkerIcon = L.divIcon({
     iconAnchor: [28, 28]
 });
 
-const t28RouteCoordinates: [number, number][] = [
-    [19.1065, -98.2160], [19.1120, -98.2250], [19.1170, -98.2320], [19.1210, -98.2390], [19.1245, -98.2440], [19.1260, -98.2462]
-];
+
+// --- SIMPLE ROUTE FOLLOWING (no external routing API). ---
+// We move the marker along a polyline by "progress" (0..1).
+const haversineMeters = (a: [number, number], b: [number, number]) => {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(b[0] - a[0]);
+  const dLon = toRad(b[1] - a[1]);
+  const lat1 = toRad(a[0]);
+  const lat2 = toRad(b[0]);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * (Math.sin(dLon / 2) ** 2);
+  return 2 * R * Math.asin(Math.sqrt(x));
+};
+
+const polylineLengths = (pts: [number, number][]) => {
+  const seg = [] as number[];
+  let total = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const d = haversineMeters(pts[i], pts[i + 1]);
+    seg.push(d);
+    total += d;
+  }
+  return { seg, total };
+};
+
+const pointAtProgress = (pts: [number, number][], progress01: number) => {
+  if (pts.length === 0) return [0, 0] as [number, number];
+  if (pts.length === 1) return pts[0];
+
+  const p = Math.min(1, Math.max(0, progress01));
+  const { seg, total } = polylineLengths(pts);
+  const target = total * p;
+
+  let acc = 0;
+  for (let i = 0; i < seg.length; i++) {
+    const next = acc + seg[i];
+    if (target <= next) {
+      const local = seg[i] === 0 ? 0 : (target - acc) / seg[i];
+      const a = pts[i];
+      const b = pts[i + 1];
+      return [a[0] + (b[0] - a[0]) * local, a[1] + (b[1] - a[1]) * local] as [number, number];
+    }
+    acc = next;
+  }
+  return pts[pts.length - 1];
+};
+
+const hhmmToMinutes = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map((v) => parseInt(v, 10));
+  // handle invalid
+  if (Number.isNaN(h) || Number.isNaN(m)) return 0;
+  return h * 60 + m;
+};
+
+const durationMinutes = (depart: string, arrive: string) => {
+  const d = hhmmToMinutes(depart);
+  const a = hhmmToMinutes(arrive);
+  // handle overnight (e.g., 22:50 -> 00:00)
+  return a >= d ? a - d : (24 * 60 - d) + a;
+};
 
 export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) => {
     const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
     const isDark = theme === 'dark';
+
+    // Simulation controls
+    // Real route is ~40 min; we compress to 10 min => 4x speed.
+    const SIM_SPEED = 4; // 1 = real time, 4 = 4x faster
+
+    // Start the simulation at 06:00 (PDF first depart). We advance a simulated minute clock.
+    const [simMinutes, setSimMinutes] = useState(() => hhmmToMinutes('06:00'));
+
+    useEffect(() => {
+      const t = setInterval(() => {
+        // Each real second advances SIM_SPEED seconds; convert to minutes
+        setSimMinutes((prev) => {
+          const next = prev + (SIM_SPEED / 60); // minutes per second
+          return next >= 24 * 60 ? next - 24 * 60 : next;
+        });
+      }, 1000);
+      return () => clearInterval(t);
+    }, []);
+
+    const t28Path = useMemo(() => ROUTE_PATHS.T28 ?? [], []);
+
+    // Pick the active trip based on the simulated time; if none active, keep last known position.
+    const activeTrip = useMemo(() => {
+      // Expand each trip into a time window in minutes, considering overnight.
+      const now = simMinutes;
+      for (const trip of TRIPS_T28) {
+        const start = hhmmToMinutes(trip.depart);
+        const dur = durationMinutes(trip.depart, trip.arrive);
+        const end = (start + dur) % (24 * 60);
+
+        const isOvernight = end < start;
+        const inWindow = isOvernight
+          ? (now >= start || now <= end)
+          : (now >= start && now <= end);
+
+        if (inWindow) {
+          // compute progress within the window
+          const elapsed = isOvernight
+            ? (now >= start ? now - start : (24 * 60 - start) + now)
+            : (now - start);
+
+          const progress = dur === 0 ? 1 : Math.min(1, Math.max(0, elapsed / dur));
+          return { trip, progress };
+        }
+      }
+      return null;
+    }, [simMinutes]);
+
+    const [vehiclePos, setVehiclePos] = useState<[number, number]>(VEHICLES[0]?.pos ?? LOCATIONS.AKSYS);
+
+    useEffect(() => {
+      if (!activeTrip) return;
+      setVehiclePos(pointAtProgress(t28Path, activeTrip.progress));
+    }, [activeTrip, t28Path]);
+
+    const simClockLabel = useMemo(() => {
+      const total = Math.floor(simMinutes);
+      const hh = String(Math.floor(total / 60)).padStart(2, '0');
+      const mm = String(total % 60).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }, [simMinutes]);
 
     return (
         <motion.div
@@ -96,7 +215,7 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
 
                 <MapController center={LOCATIONS.PLANTA_VW} zoom={15} />
 
-                <Polyline positions={t28RouteCoordinates} pathOptions={{ color: '#3b82f6', weight: 6, opacity: 0.6, dashArray: '10, 10' }} />
+                <Polyline positions={t28Path} pathOptions={{ color: '#3b82f6', weight: 6, opacity: 0.6, dashArray: '10, 10' }} />
                 <Circle center={LOCATIONS.PLANTA_VW} radius={1000} pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.05 }} />
 
                 <Marker position={LOCATIONS.PLANTA_VW} icon={vwMarkerIcon}>
@@ -106,14 +225,25 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
                 </Marker>
 
                 {VEHICLES.map((v, i) => (
-                    <Marker key={i} position={v.pos} icon={createVehicleMarker(v.status, v.id)}>
+                    <Marker key={i} position={vehiclePos} icon={createVehicleMarker(v.status, v.id)}>
                         <Popup className="vehicle-popup-pro">
                             <div className="min-w-[180px] p-2">
                                 <span className="font-black text-blue-600 block mb-1 uppercase tracking-widest text-[9px]">Live Tracker</span>
                                 <span className="font-black text-lg uppercase">{v.id}</span>
                                 <div className="mt-3 space-y-2 border-t pt-2 border-slate-100">
                                     <div className="flex justify-between text-[10px] font-black uppercase"><span>Status</span><span className={v.status === 'moving' ? 'text-emerald-500' : 'text-red-500'}>{v.status}</span></div>
-                                    <div className="flex justify-between text-[10px] font-black uppercase"><span>ETA Nave 21</span><span className="text-blue-600">12 MIN</span></div>
+                                    <div className="flex justify-between text-[10px] font-black uppercase">
+                                      <span>Sim Clock</span>
+                                      <span className="text-blue-600">{simClockLabel}</span>
+                                    </div>
+                                    <div className="flex justify-between text-[10px] font-black uppercase">
+                                      <span>Trip</span>
+                                      <span className="text-slate-600">{activeTrip ? activeTrip.trip.id : 'IDLE'}</span>
+                                    </div>
+                                    <div className="flex justify-between text-[10px] font-black uppercase">
+                                      <span>Zone</span>
+                                      <span className="text-slate-600">{activeTrip ? activeTrip.trip.zone : '-'}</span>
+                                    </div>
                                 </div>
                             </div>
                         </Popup>
@@ -170,7 +300,12 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
                 <div className="glass-card px-8 py-4 rounded-full border-4 border-white shadow-2xl pointer-events-auto flex items-center gap-6">
                     <div className="flex items-center gap-3"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div><span className="text-[10px] font-black uppercase tracking-widest text-slate-500">24 Nodes Active</span></div>
                     <div className="w-px h-4 bg-slate-200"></div>
-                    <div className="flex items-center gap-3 text-blue-600"><MapIcon size={16} /><span className="text-[10px] font-black uppercase tracking-widest">Sector: Nave 21</span></div>
+                    <div className="flex items-center gap-3 text-blue-600">
+                      <MapIcon size={16} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">
+                        Sector: {activeTrip ? activeTrip.trip.zone : '—'}
+                      </span>
+                    </div>
                 </div>
                 <div className="glass-card px-6 py-4 rounded-2xl border-4 border-white shadow-2xl pointer-events-auto bg-[#001e50] text-[#ffcc00] font-black italic text-xs uppercase tracking-tighter">DHL LOGISTICS COMMAND</div>
             </div>
