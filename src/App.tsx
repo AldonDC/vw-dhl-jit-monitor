@@ -241,7 +241,13 @@ const App: React.FC = () => {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.4, ease: "easeOut" }}
               >
-                {activePage === 'torre' && <Dashboard theme={theme} />}
+                {activePage === 'torre' && (
+                  <Dashboard
+                    theme={theme}
+                    projectionPlan={inventoryProjection}
+                    delayAssignments={delayAssignments}
+                  />
+                )}
                 {activePage === 'mapa' && <Geolocation theme={theme} />}
                 {activePage === 'alertas' && (
                   <Alerts
