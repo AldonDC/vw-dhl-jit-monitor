@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Route as RouteIcon, MapPin, Bell, Sun, Moon, Menu, Database } from 'lucide-react';
+import { LayoutDashboard, Route as RouteIcon, MapPin, Bell, Sun, Moon, Menu, Database, FileText } from 'lucide-react';
 import { useTheme } from './hooks/useTheme';
 import { ALERTS_DATA } from './data/mockData';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,17 +9,24 @@ import type { Alert, InventoryProjectionPlan, RouteDelayAssignment } from './typ
 // Component Imports
 import { NavItem } from './components/NavItem';
 import { ExcelUpload } from './components/ExcelUpload';
+import { SidebarAuth } from './components/SidebarAuth';
 
 // Page Imports
+import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { RouteCycles } from './pages/RouteCycles';
 import { Geolocation } from './pages/Geolocation';
 import { Alerts } from './pages/Alerts';
 import { Simulation } from './pages/Simulation';
 import { DriverPortal } from './pages/DriverPortal';
+import { Reportes } from './pages/Reportes';
+import { useAuth } from './contexts/AuthContext';
 
 const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
+  const { user, loading: authLoading, isConfigured } = useAuth();
+
+  // Hooks siempre en el mismo orden (no early return antes de estos)
   const [activePage, setActivePage] = useState('torre');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -36,6 +43,22 @@ const App: React.FC = () => {
     setVisibleDelayKeys((prev) => prev.filter((key) => key in delayAssignments));
   }, [delayAssignments]);
 
+  // Login al inicio cuando Supabase está configurado y no hay sesión
+  if (isConfigured && authLoading) {
+    return (
+      <div className={`min-h-screen w-full flex items-center justify-center bg-[var(--bg-main)] ${theme === 'dark' ? 'dark' : ''}`}>
+        <div className="w-10 h-10 border-2 border-[#001e50] dark:border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (isConfigured && !user) {
+    return (
+      <div className={theme === 'dark' ? 'dark' : ''}>
+        <Login />
+      </div>
+    );
+  }
+
   const getTurno = () => {
     const hr = currentTime.getHours();
     if (hr >= 6 && hr < 15) return { label: 'TURNO 1', hours: '06:00 - 15:00' };
@@ -51,6 +74,17 @@ const App: React.FC = () => {
     alertas: 'Extreme Alerts',
     simulacion: 'Simulation Matrix',
     dhl: 'Driver Validation',
+    reportes: 'Reportes y envío',
+  };
+
+  const pageDescriptionByKey: Record<string, string> = {
+    torre: 'Resumen de cumplimiento e inventario en tiempo real para la torre de control.',
+    ruta: 'Ciclos de ruta, ventanas de tiempo y asignación de demoras por día.',
+    mapa: 'Ubicación de unidades y rutas en vivo sobre el mapa.',
+    alertas: 'Alertas críticas y excepciones que requieren atención inmediata.',
+    simulacion: 'Matriz de inventario y proyección por pieza y zona logística.',
+    dhl: 'Vista para conductores: reportar demoras y validar ciclos.',
+    reportes: 'Genera y envía reportes por correo o WhatsApp, con resumen en lenguaje natural.',
   };
 
   const generatedDelayAlerts: Alert[] = Object.values(delayAssignments)
@@ -129,9 +163,17 @@ const App: React.FC = () => {
             collapsed={!isSidebarOpen}
             onClick={() => setActivePage('simulacion')}
           />
+          <NavItem
+            icon={<FileText size={24} />}
+            label="Reportes"
+            active={activePage === 'reportes'}
+            collapsed={!isSidebarOpen}
+            onClick={() => setActivePage('reportes')}
+          />
         </nav>
 
         <div className={`${isSidebarOpen ? 'p-8' : 'p-4'} border-t border-[var(--border-color)] space-y-6 shrink-0 bg-black/[0.01] dark:bg-white/[0.01]`}>
+          <SidebarAuth collapsed={!isSidebarOpen} />
           {isSidebarOpen && (
             <div className="flex items-center gap-4 p-5 rounded-3xl glass-card border border-[var(--border-color)] shadow-xl group cursor-pointer hover:border-blue-500/30 transition-all">
               <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform overflow-hidden p-1.5">
@@ -163,8 +205,10 @@ const App: React.FC = () => {
         <header className="h-28 px-14 flex items-center justify-between shrink-0 relative bg-[var(--bg-surface)]/40 backdrop-blur-2xl border-b border-[var(--border-color)]">
           <div className="flex items-center gap-10">
             <button
+              type="button"
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="w-14 h-14 flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl transition-all text-[var(--text-secondary)] hover:text-[var(--text-primary)] group shadow-sm bg-white/50 dark:bg-white/5 border border-black/5 dark:border-white/5"
+              className="w-14 h-14 flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl transition-all duration-200 text-[var(--text-secondary)] hover:text-[var(--text-primary)] group shadow-sm bg-white/50 dark:bg-white/5 border border-black/5 dark:border-white/5 focus-ring active:scale-95"
+              aria-label={isSidebarOpen ? 'Ocultar menú' : 'Mostrar menú'}
             >
               <Menu size={26} className="group-hover:rotate-180 transition-all duration-500" />
             </button>
@@ -177,6 +221,9 @@ const App: React.FC = () => {
               <h1 className="text-3xl font-black italic uppercase tracking-tighter text-[var(--text-primary)] mt-2">
                 {pageTitleByKey[activePage] ?? 'Central Intelligence'}
               </h1>
+              <p className="text-sm text-[var(--text-secondary)] font-medium mt-1 max-w-xl leading-snug" role="doc-subtitle">
+                {pageDescriptionByKey[activePage] ?? pageDescriptionByKey.torre}
+              </p>
             </div>
           </div>
 
@@ -204,8 +251,10 @@ const App: React.FC = () => {
             </div>
 
             <button
+              type="button"
               onClick={toggleTheme}
-              className="w-16 h-16 flex items-center justify-center glass-card hover:scale-110 active:scale-90 transition-all shadow-2xl group rounded-[1.25rem] relative overflow-hidden bg-white/50 dark:bg-white/5"
+              className="w-16 h-16 flex items-center justify-center glass-card hover:scale-105 active:scale-95 transition-transform duration-200 shadow-2xl group rounded-[1.25rem] relative overflow-hidden bg-white/50 dark:bg-white/5 focus-ring"
+              aria-label={theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
             >
               <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
               <AnimatePresence mode="wait">
@@ -271,6 +320,7 @@ const App: React.FC = () => {
                     visibleDelayKeys={visibleDelayKeys}
                   />
                 )}
+                {activePage === 'reportes' && <Reportes />}
               </motion.div>
             </AnimatePresence>
           )}

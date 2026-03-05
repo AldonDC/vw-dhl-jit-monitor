@@ -127,9 +127,9 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       animate={{ opacity: 1, y: 0 }}
       className="space-y-8 pb-10"
     >
-      <div className="glass-card rounded-[2.5rem] p-8 border border-[var(--border-color)]">
-        <h2 className="text-3xl font-black text-[var(--text-primary)] uppercase tracking-tighter italic">Registro conductor DHL</h2>
-        <p className="text-[11px] text-[var(--text-secondary)] font-black uppercase tracking-[0.2em] mt-2">
+      <div className="glass-card rounded-[2.5rem] p-8 border border-[var(--border-color)] transition-shadow duration-300 hover:shadow-lg">
+        <h2 className="text-2xl font-black text-[var(--text-primary)] uppercase tracking-tight">Registro conductor DHL</h2>
+        <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-2">
           Demoras detectadas: {visibleDelays.length} · Pendientes de validar: {pendingDelays.length}
         </p>
       </div>
@@ -151,7 +151,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
           const expectedArrival = row ? formatTime(row.vwArriveAt) : '--:--';
 
           return (
-            <div key={key} className="glass-card rounded-[2rem] p-8 border border-[var(--border-color)]">
+            <div key={key} className="glass-card rounded-[2rem] p-8 border border-[var(--border-color)] transition-shadow duration-300 hover:shadow-lg">
               <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
                 <div className="space-y-2">
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-700 dark:text-blue-400">
@@ -195,7 +195,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                 <button
                   onClick={() => validateReason(key)}
                   disabled={!reasonByKey[key]}
-                  className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-[#001e50] text-white disabled:opacity-50 flex items-center gap-2"
+                  className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-[#001e50] dark:bg-blue-600 text-white disabled:opacity-50 flex items-center gap-2 focus-ring active:scale-95 transition-transform duration-200 hover:opacity-90"
                 >
                   <CheckCircle2 size={14} />
                   Validar

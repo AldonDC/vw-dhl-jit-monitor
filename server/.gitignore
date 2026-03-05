@@ -3,3 +3,6 @@ node_modules
 .env
 
 /generated/prisma
+
+# Demo: correo/WhatsApp guardados para vista previa
+/output

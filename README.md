@@ -40,6 +40,7 @@ El dashboard centraliza la telemetría de rutas, el cumplimiento de ventanas de 
 *   **Animations**: Framer Motion (Seamless transitions).
 *   **Maps**: Leaflet + React-Leaflet (GIS integration).
 *   **Charts**: Recharts (Operational data visualization).
+*   **Auth (complemento)**: Supabase en el frontend para sesión de usuario; el backend Express no se modifica. Ver [SUPABASE.md](./SUPABASE.md).
 
 ---
 

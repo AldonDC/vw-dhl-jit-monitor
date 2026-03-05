@@ -1,27 +1,52 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
-import { LOCATIONS, VEHICLES, ROUTE_PATHS, TRIPS_T28 } from '../data/mockData';
+import { LOCATIONS, VEHICLES, ROUTE_PATHS, TRIPS_T28, ROUTES_DATA } from '../data/mockData';
+import type { Trip } from '../data/mockData';
 import logoVw from '../assets/logo-vw.png';
 import L from 'leaflet';
-import { Map as MapIcon, Layers, Navigation, Compass } from 'lucide-react';
+import { Map as MapIcon, Layers, Navigation, Compass, X, Route, Clock } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 
+type RouteInfo = {
+  routeId: string;
+  routeData: (typeof ROUTES_DATA)[0];
+  trips: Trip[];
+  path: [number, number][];
+};
 
-// --- HELPER COMPONENT TO CONTROL THE MAP ---
+
+// --- HELPER COMPONENTS TO CONTROL THE MAP ---
 const MapController = ({ center, zoom }: { center: [number, number], zoom: number }) => {
     const map = useMap();
-
-    // Custom function to reset view
-    const resetView = () => {
-        map.flyTo(center, zoom, { duration: 1.5 });
-    };
-
-    // Assign the reset function to a global window for the custom button to call it
-    // (In a real app, we'd use a context or ref, but for this mockup this is fast and effective)
+    const resetView = () => map.flyTo(center, zoom, { duration: 1.5 });
     (window as any).resetMapView = resetView;
-
     return null;
+};
+
+type RightMapControlsProps = {
+  mapType: 'standard' | 'satellite';
+  setMapType: (t: 'standard' | 'satellite') => void;
+  center: [number, number];
+  zoom: number;
+};
+const RightMapControls = ({ mapType, setMapType, center, zoom }: RightMapControlsProps) => {
+    const map = useMap();
+    return (
+        <div className="absolute top-6 right-6 z-[1000] flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
+            <div className="flex flex-col gap-1.5 p-2 rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-600 shadow-xl">
+                <button type="button" onClick={() => map.zoomIn()} className="w-11 h-11 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white font-black text-lg transition-colors" aria-label="Acercar">+</button>
+                <div className="h-px bg-slate-200 dark:bg-slate-600" />
+                <button type="button" onClick={() => map.zoomOut()} className="w-11 h-11 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white font-black text-lg transition-colors" aria-label="Alejar">−</button>
+            </div>
+            <button type="button" onClick={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')} className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl border-2 transition-all ${mapType === 'satellite' ? 'bg-[#001e50] text-[#ffcc00] border-[#ffcc00]/30' : 'bg-white/95 dark:bg-slate-800/95 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-blue-500'}`} aria-label={mapType === 'satellite' ? 'Mapa estándar' : 'Satélite'}>
+                <Layers size={22} />
+            </button>
+            <button type="button" onClick={() => map.flyTo(center, zoom, { duration: 1.5 })} className="w-12 h-12 rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border-2 border-slate-200 dark:border-slate-600 shadow-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white hover:border-blue-500 transition-all" aria-label="Centrar en planta">
+                <Compass size={22} />
+            </button>
+        </div>
+    );
 };
 
 // --- CUSTOM MARKERS ---
@@ -122,9 +147,32 @@ const durationMinutes = (depart: string, arrive: string) => {
   return a >= d ? a - d : (24 * 60 - d) + a;
 };
 
+// Rutas con geometría + datos para match y popup
+const ROUTES_WITH_INFO: RouteInfo[] = Object.keys(ROUTE_PATHS).map((routeId) => {
+  const path = ROUTE_PATHS[routeId] ?? [];
+  const routeData = ROUTES_DATA.find((r) => r.id === routeId) ?? {
+    id: routeId,
+    prov: '-',
+    origin: '-',
+    target: '-',
+    status: 'ok' as const,
+    window: '-',
+    real: '-',
+    delta: 0,
+    turno: 1,
+  };
+  const trips = routeId === 'T28' ? TRIPS_T28 : [];
+  return { routeId, routeData, trips, path };
+}).filter((r) => r.path.length > 0);
+
 export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) => {
     const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
+    const [selectedRoute, setSelectedRoute] = useState<RouteInfo | null>(null);
+    const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
     const isDark = theme === 'dark';
+
+    const openRouteInfo = useCallback((info: RouteInfo) => setSelectedRoute(info), []);
+    const closeRouteInfo = useCallback(() => setSelectedRoute(null), []);
 
     // Simulation controls
     // Real route is ~40 min; we compress to 10 min => 4x speed.
@@ -191,8 +239,16 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
         <motion.div
             initial={{ opacity: 0, scale: 0.99 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="h-[80vh] w-full rounded-[3.5rem] overflow-hidden border-8 border-white dark:border-slate-800 shadow-[0_40px_100px_rgba(0,0,0,0.2)] relative bg-slate-100"
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+            className="geolocation-page h-[80vh] w-full rounded-[2.5rem] overflow-hidden relative bg-slate-200 dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-700"
         >
+            {/* Marco tipo HUD: franja superior azul VW + sombra interna */}
+            <div className="absolute inset-0 rounded-[2.5rem] pointer-events-none z-[998]" style={{ boxShadow: 'inset 0 0 0 1px rgba(0,30,80,0.08), inset 0 2px 4px rgba(0,0,0,0.04)' }} />
+            <div className="absolute top-0 left-0 right-0 h-1 rounded-t-[2.5rem] bg-gradient-to-r from-[#001e50] via-[#2563eb] to-[#001e50] pointer-events-none z-[999]" />
+            <style>{`
+              .geolocation-page .leaflet-interactive { cursor: pointer; }
+              .geolocation-page .leaflet-control-attribution { font-size: 9px; opacity: 0.7; }
+            `}</style>
             <MapContainer
                 center={LOCATIONS.PLANTA_VW}
                 zoom={14}
@@ -214,8 +270,25 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
                 )}
 
                 <MapController center={LOCATIONS.PLANTA_VW} zoom={15} />
+                <RightMapControls mapType={mapType} setMapType={setMapType} center={LOCATIONS.PLANTA_VW} zoom={15} />
 
-                <Polyline positions={t28Path} pathOptions={{ color: '#3b82f6', weight: 6, opacity: 0.6, dashArray: '10, 10' }} />
+                {ROUTES_WITH_INFO.map((info) => (
+                  <Polyline
+                    key={info.routeId}
+                    positions={info.path}
+                    pathOptions={{
+                      color: selectedRoute?.routeId === info.routeId ? '#2563eb' : '#3b82f6',
+                      weight: hoveredRouteId === info.routeId ? 10 : 6,
+                      opacity: hoveredRouteId === info.routeId ? 0.9 : 0.6,
+                      dashArray: '10, 10',
+                    }}
+                    eventHandlers={{
+                      click: () => openRouteInfo(info),
+                      mouseover: () => setHoveredRouteId(info.routeId),
+                      mouseout: () => setHoveredRouteId(null),
+                    }}
+                  />
+                ))}
                 <Circle center={LOCATIONS.PLANTA_VW} radius={1000} pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.05 }} />
 
                 <Marker position={LOCATIONS.PLANTA_VW} icon={vwMarkerIcon}>
@@ -253,62 +326,124 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
 
             {/* --- FUNCTIONAL UI OVERLAYS --- */}
 
-            {/* HUD Panel Left */}
-            <div className="absolute top-8 left-8 z-[1000] pointer-events-none">
-                <div className="glass-card p-6 rounded-[2rem] w-80 pointer-events-auto border-4 border-white shadow-2xl">
-                    <div className="flex items-center gap-3 mb-6 pb-4 border-b border-black/5">
-                        <div className="w-2 h-6 bg-blue-600 rounded-full"></div>
-                        <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">Fleet Control</h3>
+            {/* Panel izquierdo: Flota + Reloj sim + Leyenda */}
+            <div className="absolute top-6 left-6 z-[1000] pointer-events-none">
+                <motion.div
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.15, duration: 0.35 }}
+                    className="w-72 pointer-events-auto rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-600 shadow-xl overflow-hidden"
+                >
+                    <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-600 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-5 bg-[#001e50] dark:bg-blue-500 rounded-full" />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Flota · Live</span>
+                        </div>
+                        <span className="text-[10px] font-mono font-black text-blue-600 dark:text-blue-400 tabular-nums">{simClockLabel}</span>
                     </div>
-                    <div className="space-y-5">
+                    <div className="p-4 space-y-4">
                         {VEHICLES.map((v, i) => (
-                            <div key={i} className="flex items-center justify-between group">
-                                <div className="flex items-center gap-4">
-                                    <div className={`w-3 h-3 rounded-full ${v.status === 'moving' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-red-500'}`}></div>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-black uppercase leading-none">{v.id}</span>
-                                        <span className="text-[9px] font-bold text-slate-400 mt-1 uppercase">Route {v.route}</span>
+                            <div key={i} className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${v.status === 'moving' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-amber-500'}`} />
+                                    <div>
+                                        <p className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">{v.id}</p>
+                                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Ruta {v.route} · {activeTrip ? activeTrip.trip.id : 'IDLE'}</p>
                                     </div>
                                 </div>
-                                <Navigation size={14} className="text-slate-300" />
+                                <Navigation size={16} className="text-slate-300 dark:text-slate-500 shrink-0" />
                             </div>
                         ))}
                     </div>
-                </div>
-            </div>
-
-            {/* Right Buttons: FUNCTIONAL */}
-            <div className="absolute top-8 right-8 z-[1000] flex flex-col gap-3">
-                {/* Toggle Satelite */}
-                <button
-                    onClick={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
-                    className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all shadow-2xl border-2 border-white ${mapType === 'satellite' ? 'bg-blue-600 text-white' : 'glass-card text-slate-600'}`}
-                >
-                    <Layers size={22} className={mapType === 'satellite' ? 'animate-pulse' : ''} />
-                </button>
-
-                {/* Reset View (Compass) */}
-                <button
-                    onClick={() => (window as any).resetMapView?.()}
-                    className="w-14 h-14 glass-card rounded-2xl flex items-center justify-center text-slate-600 hover:text-blue-600 transition-all shadow-2xl border-2 border-white active:scale-90"
-                >
-                    <Compass size={22} />
-                </button>
-            </div>
-
-            <div className="absolute bottom-10 left-10 right-10 z-[1000] flex justify-between items-center pointer-events-none">
-                <div className="glass-card px-8 py-4 rounded-full border-4 border-white shadow-2xl pointer-events-auto flex items-center gap-6">
-                    <div className="flex items-center gap-3"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div><span className="text-[10px] font-black uppercase tracking-widest text-slate-500">24 Nodes Active</span></div>
-                    <div className="w-px h-4 bg-slate-200"></div>
-                    <div className="flex items-center gap-3 text-blue-600">
-                      <MapIcon size={16} />
-                      <span className="text-[10px] font-black uppercase tracking-widest">
-                        Sector: {activeTrip ? activeTrip.trip.zone : '—'}
-                      </span>
+                    <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/50">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Leyenda</p>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[9px] font-bold text-slate-600 dark:text-slate-400">
+                            <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#3b82f6]" /> Ruta</span>
+                            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded bg-white border border-slate-300" /> Planta VW</span>
+                            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded bg-emerald-500" /> Unidad</span>
+                        </div>
                     </div>
-                </div>
-                <div className="glass-card px-6 py-4 rounded-2xl border-4 border-white shadow-2xl pointer-events-auto bg-[#001e50] text-[#ffcc00] font-black italic text-xs uppercase tracking-tighter">DHL LOGISTICS COMMAND</div>
+                </motion.div>
             </div>
+
+
+            {/* Barra inferior */}
+            <div className="absolute bottom-6 left-6 right-6 z-[1000] flex justify-between items-center pointer-events-none gap-4">
+                <div className="pointer-events-auto flex items-center gap-4 px-5 py-3 rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-600 shadow-xl">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">En línea</span>
+                    </div>
+                    <div className="w-px h-5 bg-slate-200 dark:bg-slate-600" />
+                    <div className="flex items-center gap-2 text-[#001e50] dark:text-blue-400">
+                        <MapIcon size={16} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Sector {activeTrip ? activeTrip.trip.zone : '—'}</span>
+                    </div>
+                    <div className="w-px h-5 bg-slate-200 dark:bg-slate-600" />
+                    <span className="text-[10px] font-mono font-black text-slate-600 dark:text-slate-300 tabular-nums">Sim {simClockLabel}</span>
+                </div>
+                <div className="pointer-events-auto px-5 py-3 rounded-2xl bg-[#001e50] dark:bg-[#001e50] border border-[#001e50]/80 shadow-xl">
+                    <span className="text-[10px] font-black italic uppercase tracking-tight text-[#ffcc00]">DHL · Logistics Command</span>
+                </div>
+            </div>
+
+            {/* Mini ventana: info de la ruta al hacer clic en el polyline */}
+            <AnimatePresence>
+              {selectedRoute && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                  transition={{ duration: 0.2 }}
+                  className="absolute bottom-24 left-8 z-[1001] w-[340px] max-h-[70vh] pointer-events-auto"
+                >
+                  <div className="glass-card rounded-2xl border-4 border-white shadow-2xl overflow-hidden bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl">
+                    <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-600 bg-[#001e50] text-white">
+                      <div className="flex items-center gap-2">
+                        <Route size={18} />
+                        <span className="font-black uppercase tracking-tight text-sm">Ruta {selectedRoute.routeId}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeRouteInfo}
+                        className="p-1.5 rounded-xl hover:bg-white/20 transition-colors"
+                        aria-label="Cerrar"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                    <div className="p-4 space-y-4 max-h-[55vh] overflow-y-auto">
+                      <div className="grid grid-cols-2 gap-2 text-[10px] font-black uppercase">
+                        <div className="col-span-2 text-slate-500 tracking-widest">Proveedor / Origen → Destino</div>
+                        <div className="col-span-2 text-slate-800 dark:text-slate-200">{selectedRoute.routeData.prov}</div>
+                        <div><span className="text-slate-500">Origen</span><br /><span className="text-slate-800 dark:text-slate-100">{selectedRoute.routeData.origin}</span></div>
+                        <div><span className="text-slate-500">Destino</span><br /><span className="text-slate-800 dark:text-slate-100">{selectedRoute.routeData.target}</span></div>
+                        <div><span className="text-slate-500">Ventana</span><br /><span className="text-blue-600 dark:text-blue-400">{selectedRoute.routeData.window}</span></div>
+                        <div><span className="text-slate-500">Real</span><br /><span className={selectedRoute.routeData.delta > 0 ? 'text-amber-600' : 'text-emerald-600'}>{selectedRoute.routeData.real}</span></div>
+                        <div><span className="text-slate-500">Delta</span><br /><span className={selectedRoute.routeData.delta > 0 ? 'text-amber-600' : 'text-slate-800 dark:text-slate-100'}>{selectedRoute.routeData.delta} min</span></div>
+                        <div><span className="text-slate-500">Estado</span><br /><span className={selectedRoute.routeData.status === 'ok' ? 'text-emerald-600' : selectedRoute.routeData.status === 'risk' ? 'text-amber-600' : 'text-red-600'}>{selectedRoute.routeData.status}</span></div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
+                          <Clock size={12} />
+                          Ciclos / Viajes
+                        </div>
+                        <ul className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {selectedRoute.trips.map((t) => (
+                            <li key={t.id} className="flex items-center justify-between py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-[10px] font-bold">
+                              <span className="text-slate-700 dark:text-slate-200">{t.id}</span>
+                              <span className="text-slate-500">{t.depart} → {t.arrive}</span>
+                              <span className="text-blue-600 dark:text-blue-400 truncate max-w-[100px]" title={t.zone}>{t.zone}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Haz clic en la ruta en el mapa para ver esta info</p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
         </motion.div>
     );
 };

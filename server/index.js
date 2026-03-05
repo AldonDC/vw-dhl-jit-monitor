@@ -548,6 +548,94 @@ app.delete("/api/simulation/projection", async (_req, res, next) => {
   }
 });
 
+// --- Reportes, correo, WhatsApp (demo o real) ---
+const reportes = require("./reportes");
+
+app.post("/api/reportes/enviar", async (req, res, next) => {
+  try {
+    const { summary = {}, emails = [], phones = [], incluirResumenAI = true } = req.body;
+    const resumenAI = incluirResumenAI ? reportes.generarResumenAI(summary) : null;
+    const { texto, html } = reportes.construirContenidoReporte(summary, resumenAI);
+    const asunto = `Reporte JIT - ${summary.latestDay ? new Date(summary.latestDay).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) : "Hoy"}`;
+
+    const mensajeWhatsApp = resumenAI || texto;
+    let emailResult = { enviado: false, demo: true };
+    let whatsappResult = { enviado: false, demo: true, mensajeWhatsApp: null };
+
+    if (emails.length > 0) {
+      emailResult = await reportes.enviarCorreo(emails, asunto, texto, html);
+    }
+    whatsappResult = await reportes.enviarWhatsApp(Array.isArray(phones) ? phones : [], mensajeWhatsApp);
+
+    res.json({
+      ok: true,
+      email: emailResult,
+      whatsapp: whatsappResult,
+      resumenAI: resumenAI || null,
+      contenidoTexto: texto,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// --- Predicción de retraso (mock para ML/demo) ---
+app.get("/api/prediccion/retraso", (req, res) => {
+  const { ruta = "", fecha = "" } = req.query;
+  const riesgo = ruta ? (ruta.length % 3 === 0 ? "alto" : ruta.length % 3 === 1 ? "medio" : "bajo") : "medio";
+  const minutosEstimados = riesgo === "alto" ? 25 : riesgo === "medio" ? 12 : 5;
+  res.json({
+    ruta: ruta || null,
+    fecha: fecha || null,
+    riesgo,
+    minutosEstimados,
+    mensaje: riesgo === "alto" ? "Ruta con historial de retrasos; monitorear." : "Dentro de lo esperado.",
+  });
+});
+
+// --- Recomendaciones prioridad (piezas a reabastecer; desde simulación o mock) ---
+app.get("/api/recomendaciones/prioridad", async (req, res, next) => {
+  try {
+    const latest = await prisma.dailyRouteSimulation.findFirst({
+      orderBy: { serviceDate: "desc" },
+      select: { serviceDate: true },
+    });
+    const serviceDate = latest?.serviceDate ?? null;
+    const partZones = await prisma.partZone.findMany({
+      include: {
+        part: true,
+        logisticZone: true,
+        snapshots: {
+          where: serviceDate ? { date: serviceDate } : {},
+          orderBy: { date: "desc" },
+          take: 1,
+        },
+      },
+    });
+    const withSaldo = partZones
+      .map((pz) => {
+        const snap = pz.snapshots[0];
+        const saldo = snap?.saldo ?? null;
+        return {
+          partZoneId: pz.id,
+          np: pz.part?.np ?? "",
+          zona: pz.logisticZone?.name ?? "",
+          saldo,
+          prioridad: saldo != null && saldo < 0 ? "alta" : saldo != null && saldo < 50 ? "media" : "baja",
+        };
+      })
+      .filter((r) => r.prioridad !== "baja")
+      .sort((a, b) => (a.prioridad === "alta" ? -1 : b.prioridad === "alta" ? 1 : 0))
+      .slice(0, 10);
+    res.json({
+      serviceDate: serviceDate ? toIsoUtcDate(serviceDate) : null,
+      items: withSaldo,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((error, _req, res, _next) => {
   console.error("API error:", error);
   res.status(500).json({ error: "Internal server error" });
