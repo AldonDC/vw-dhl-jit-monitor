@@ -17,7 +17,9 @@
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "nodemailer": "^6.10.1",
     "prisma": "^6.19.2",
+    "twilio": "^5.12.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

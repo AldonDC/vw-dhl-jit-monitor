@@ -51,10 +51,10 @@ const MetricBox: React.FC<MetricBoxProps> = ({ label, value, sub, color, icon })
         red: 'text-red-500',
     };
     return (
-        <div className="glass-card p-8 rounded-[2rem] group hover:translate-y-[-5px] transition-all duration-300">
+        <div className="glass-card p-8 rounded-[2rem] group hover:translate-y-[-4px] hover:shadow-lg transition-all duration-300">
             <div className="flex justify-between items-start mb-6">
                 <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] group-hover:text-current transition-colors">{label}</span>
-                <div className={`scale-90 opacity-40 group-hover:opacity-100 transition-all ${colors[color]}`}>{icon}</div>
+                <div className={`scale-90 opacity-50 group-hover:opacity-100 transition-all duration-200 ${colors[color]}`}>{icon}</div>
             </div>
             <p className={`text-4xl font-black mt-2 tracking-tighter ${colors[color]}`}>{value}</p>
             <p className="text-[10px] text-[var(--text-secondary)] font-black mt-2 uppercase tracking-widest leading-none">{sub}</p>
@@ -747,7 +747,7 @@ export const RouteCycles: React.FC<RouteCyclesProps> = ({
                         <div className="mt-6 flex items-center justify-end gap-3">
                             <button
                                 onClick={() => setShowLatePopup(false)}
-                                className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 border border-[var(--border-color)]"
+                                className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 border border-[var(--border-color)] focus-ring active:scale-95 transition-transform duration-200 hover:bg-black/10 dark:hover:bg-white/10"
                             >
                                 Cerrar
                             </button>
@@ -756,7 +756,7 @@ export const RouteCycles: React.FC<RouteCyclesProps> = ({
                                     setShowLatePopup(false);
                                     onOpenDriverPage();
                                 }}
-                                className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-[#001e50] text-white"
+                                className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-[#001e50] dark:bg-blue-600 text-white focus-ring active:scale-95 transition-transform duration-200 hover:opacity-90"
                             >
                                 Ver registro del conductor
                             </button>
@@ -765,26 +765,26 @@ export const RouteCycles: React.FC<RouteCyclesProps> = ({
                 </div>
             )}
 
-            <div className="glass-card rounded-[2.5rem] p-8 hud-border space-y-6">
+            <div className="glass-card rounded-[2.5rem] p-8 hud-border space-y-6 transition-shadow duration-300 hover:shadow-lg">
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
                     <div>
-                        <h3 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Control de simulacion</h3>
+                        <h3 className="text-sm font-black text-[var(--text-primary)] uppercase tracking-tight">Control de simulación</h3>
                         <p className="text-[11px] text-[var(--text-secondary)] mt-2 font-bold">
-                            Selecciona en cuanto tiempo debe terminar todo el ciclo (maximo 5:00 minutos).
+                            Duración total del ciclo en pantalla (máximo 5:00 min).
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                         <button
                             onClick={() => { void handlePlayPause(); }}
                             disabled={!timelineSteps.length || loading || !!error || projectionLoading}
-                            className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-[#001e50] text-white flex items-center gap-2 disabled:opacity-50"
+                            className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-[#001e50] dark:bg-blue-600 text-white flex items-center gap-2 disabled:opacity-50 focus-ring active:scale-95 transition-transform duration-200 hover:opacity-90"
                         >
                             {isPlaying ? <Pause size={14} /> : <Play size={14} />}
-                            {projectionLoading ? 'Generando' : isPlaying ? 'Pause' : 'Play'}
+                            {projectionLoading ? 'Generando' : isPlaying ? 'Pausar' : 'Play'}
                         </button>
                         <button
                             onClick={handleReset}
-                            className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 border border-[var(--border-color)] flex items-center gap-2"
+                            className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 border border-[var(--border-color)] flex items-center gap-2 focus-ring active:scale-95 transition-transform duration-200 hover:bg-black/10 dark:hover:bg-white/10"
                         >
                             <RotateCcw size={14} />
                             Reset
@@ -792,14 +792,14 @@ export const RouteCycles: React.FC<RouteCyclesProps> = ({
                         <button
                             onClick={() => { void generatePreviewPlan(); }}
                             disabled={projectionLoading}
-                            className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-blue-600/10 text-blue-700 dark:text-blue-400 border border-blue-500/20 flex items-center gap-2 disabled:opacity-50"
+                            className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-blue-600/10 text-blue-700 dark:text-blue-400 border border-blue-500/20 flex items-center gap-2 disabled:opacity-50 focus-ring active:scale-95 transition-transform duration-200 hover:bg-blue-600/20"
                         >
                             <RefreshCw size={14} />
                             Replan
                         </button>
                         <button
                             onClick={() => void loadRouteSimulation()}
-                            className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 border border-[var(--border-color)] flex items-center gap-2"
+                            className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 border border-[var(--border-color)] flex items-center gap-2 focus-ring active:scale-95 transition-transform duration-200 hover:bg-black/10 dark:hover:bg-white/10"
                         >
                             <RefreshCw size={14} />
                             Reload

@@ -163,26 +163,26 @@ export const Alerts: React.FC<AlertsProps> = ({ generatedAlerts = [], projection
     >
       <div className="flex justify-between items-end mb-10">
         <div>
-          <h2 className="text-4xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">Alert Center</h2>
-          <p className="text-[11px] text-red-600 font-black uppercase tracking-[0.3em] mt-3 bg-red-500/5 px-4 py-2 rounded-xl border border-red-500/10 inline-block">
-            {criticalCount} Critical Issues Detected
+          <h2 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">Centro de alertas</h2>
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] mt-3 bg-red-500/5 px-4 py-2 rounded-xl border border-red-500/10 inline-block text-red-600 dark:text-red-400">
+            {criticalCount} {criticalCount === 1 ? 'incidente crítico' : 'incidentes críticos'} detectados
           </p>
         </div>
         <div className="flex gap-4">
-          <button className="px-6 py-3 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/5 transition-all">Clear Resolved</button>
-          <button className="px-6 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-500/20 hover:scale-[1.05] transition-all">Dispatch Help</button>
+          <button className="px-6 py-3 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/5 transition-all duration-200 focus-ring active:scale-95">Limpiar resueltas</button>
+          <button className="px-6 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-500/20 hover:opacity-90 transition-all duration-200 focus-ring active:scale-95">Enviar apoyo</button>
         </div>
       </div>
 
       <section className="space-y-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orange-500/10 text-orange-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-orange-500/10 text-orange-600 flex items-center justify-center shrink-0">
             <Factory size={20} />
           </div>
           <div>
-            <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase tracking-tight italic">Produccion en Planta</h3>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--text-secondary)]">
-              Alertas por cobertura de stock por hora (demanda diaria / 23)
+            <h3 className="text-xl font-black text-[var(--text-primary)] uppercase tracking-tight">Producción en planta</h3>
+            <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-1">
+              Alertas por cobertura de stock (demanda diaria / 23 h).
             </p>
           </div>
         </div>
@@ -204,13 +204,13 @@ export const Alerts: React.FC<AlertsProps> = ({ generatedAlerts = [], projection
 
       <section className="space-y-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600/10 text-blue-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-blue-600/10 text-blue-600 flex items-center justify-center shrink-0">
             <Truck size={20} />
           </div>
           <div>
-            <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase tracking-tight italic">Notificaciones en la Entrega</h3>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--text-secondary)]">
-              Demoras de ruta y eventos operativos de entrega
+            <h3 className="text-xl font-black text-[var(--text-primary)] uppercase tracking-tight">Entrega en ruta</h3>
+            <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-1">
+              Demoras y eventos operativos de entrega.
             </p>
           </div>
         </div>
@@ -222,15 +222,15 @@ export const Alerts: React.FC<AlertsProps> = ({ generatedAlerts = [], projection
         </div>
       </section>
 
-      <div className="glass-card p-12 rounded-[3rem] mt-20 flex flex-col md:flex-row items-center gap-10 border-blue-500/10">
-        <div className="w-24 h-24 rounded-full bg-blue-600/10 flex items-center justify-center text-blue-600 shadow-inner">
-          <Bell size={40} className="animate-bounce" />
+      <div className="glass-card p-12 rounded-[3rem] mt-20 flex flex-col md:flex-row items-center gap-10 border-blue-500/10 transition-shadow duration-300 hover:shadow-lg">
+        <div className="w-24 h-24 rounded-full bg-blue-600/10 flex items-center justify-center text-blue-600 shadow-inner shrink-0">
+          <Bell size={40} className="animate-pulse" />
         </div>
         <div className="flex-1 text-center md:text-left">
-          <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase tracking-tighter italic">Notification Management</h3>
-          <p className="text-sm font-bold text-[var(--text-secondary)] mt-2">All operational teams are synced with this dispatch tower. Real-time geofence alerts are enabled.</p>
+          <h3 className="text-xl font-black text-[var(--text-primary)] uppercase tracking-tight">Gestión de notificaciones</h3>
+          <p className="text-sm font-medium text-[var(--text-secondary)] mt-2">Equipos operativos sincronizados con esta torre. Alertas por geocerca en tiempo real.</p>
         </div>
-        <button className="px-10 py-5 bg-[#001e50] text-white font-black uppercase tracking-widest rounded-[2rem] shadow-2xl shadow-blue-900/40 hover:scale-[1.05] transition-all">Configure Alerts</button>
+        <button className="px-10 py-5 bg-[#001e50] dark:bg-blue-600 text-white font-black uppercase tracking-widest rounded-[2rem] shadow-2xl shadow-blue-900/40 hover:opacity-90 transition-all duration-200 focus-ring active:scale-95 shrink-0">Configurar alertas</button>
       </div>
     </motion.div>
   );

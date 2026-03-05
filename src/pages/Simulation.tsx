@@ -352,15 +352,15 @@ export const Simulation: React.FC<SimulationProps> = ({
       animate={{ opacity: 1, y: 0 }}
       className="space-y-8 pb-10"
     >
-      <div className="glass-card rounded-[2.5rem] p-8 border border-[var(--border-color)] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+      <div className="glass-card rounded-[2.5rem] p-8 border border-[var(--border-color)] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 transition-shadow duration-300 hover:shadow-lg">
         <div className="flex items-start gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-blue-600/10 text-blue-600 flex items-center justify-center">
+          <div className="w-14 h-14 rounded-2xl bg-blue-600/10 text-blue-600 flex items-center justify-center shrink-0">
             <Database size={28} />
           </div>
           <div>
-            <h2 className="text-3xl font-black text-[var(--text-primary)] uppercase tracking-tighter italic">Simulation Data</h2>
-            <p className="text-[11px] text-[var(--text-secondary)] font-black uppercase tracking-[0.2em] mt-2">
-              Datos reales importados desde Prisma
+            <h2 className="text-2xl font-black text-[var(--text-primary)] uppercase tracking-tight">Datos de simulación</h2>
+            <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-2">
+              Inventario y rutas importados desde Prisma.
             </p>
           </div>
         </div>
@@ -369,38 +369,38 @@ export const Simulation: React.FC<SimulationProps> = ({
           <span className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-black/5 dark:bg-white/5 text-[var(--text-secondary)]">
             Materiales: {summary?.totalPartZones ?? rows.length}
           </span>
-          <span className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-red-500/10 text-red-600 border border-red-500/20">
-            Saldos Negativos: {effectiveNegativeBalances}
+          <span className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+            Saldos negativos: {effectiveNegativeBalances}
           </span>
-          <span className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-blue-600/10 text-blue-600 border border-blue-600/20">
-            Dias: {effectiveDays.length}
+          <span className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-blue-600/10 text-blue-600 dark:text-blue-400 border border-blue-600/20">
+            Días: {effectiveDays.length}
           </span>
           {projectionPlan && (
             <span className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
-              Proyeccion: {projectionPlan.projectedDays.length} dias habiles
+              Proyección: {projectionPlan.projectedDays.length} días hábiles
             </span>
           )}
           <button
             onClick={refreshAll}
-            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-[var(--accent-color)] text-white flex items-center gap-2"
+            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-[var(--accent-color)] text-white flex items-center gap-2 focus-ring active:scale-95 transition-transform duration-200 hover:opacity-90"
           >
             <RefreshCw size={12} />
-            Refresh
+            Actualizar
           </button>
           <button
             onClick={() => { void clearProjectedData(); }}
             disabled={deletingProjection}
-            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-red-500/10 text-red-600 border border-red-500/20 disabled:opacity-50"
+            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 disabled:opacity-50 focus-ring active:scale-95 transition-transform duration-200"
           >
-            {deletingProjection ? 'Borrando...' : 'Borrar proyeccion'}
+            {deletingProjection ? 'Borrando...' : 'Borrar proyección'}
           </button>
         </div>
       </div>
 
-      <div className="glass-card rounded-[2.5rem] overflow-hidden border border-[var(--border-color)]">
-        <div className="px-8 py-5 border-b border-[var(--border-color)] flex items-center justify-between">
-          <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)]">Inventory Simulation Table</h3>
-          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--text-secondary)]">Ultimo dia: {effectiveLatestDate}</span>
+      <div className="glass-card rounded-[2.5rem] overflow-hidden border border-[var(--border-color)] transition-shadow duration-300 hover:shadow-lg">
+        <div className="px-8 py-5 border-b border-[var(--border-color)] flex items-center justify-between bg-black/[0.01] dark:bg-white/[0.01]">
+          <h3 className="text-sm font-black text-[var(--text-primary)] uppercase tracking-tight">Tabla de inventario</h3>
+          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--text-secondary)]">Último día: {effectiveLatestDate}</span>
         </div>
         <div className="px-8 py-3 border-b border-[var(--border-color)] text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
           Las columnas con fecha representan lo que VW ocupa ese dia; la columna saldo representa la resta acumulada de existencias.
@@ -427,7 +427,7 @@ export const Simulation: React.FC<SimulationProps> = ({
         {!inventoryLoading && !inventoryError && (
           <div className="overflow-x-scroll pb-2">
             <table className="w-max min-w-full text-left text-[11px]">
-              <thead className="bg-black/5 dark:bg-white/5 text-[var(--text-secondary)] font-black uppercase tracking-widest">
+              <thead className="sticky top-0 z-10 bg-[var(--bg-surface)] shadow-[0_1px_0_0_var(--border-color)] text-[var(--text-secondary)] font-black uppercase tracking-widest text-[10px]">
                 <tr>
                   <th className="px-6 py-4">NP</th>
                   <th className="px-6 py-4">Disp</th>
@@ -448,10 +448,10 @@ export const Simulation: React.FC<SimulationProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-color)] font-bold">
-                {effectiveRows.map((row) => {
+                {effectiveRows.map((row, i) => {
                   const status = getStatusPill(row.status);
                   return (
-                    <tr key={row.id} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+                    <tr key={row.id} className={`hover:bg-blue-500/[0.06] dark:hover:bg-blue-500/10 transition-colors duration-200 ${i % 2 === 1 ? 'bg-black/[0.02] dark:bg-white/[0.02]' : ''}`}>
                       <td className="px-6 py-4 text-[var(--text-primary)]">
                         <div className="flex flex-col">
                           <span className="font-black">{row.np}</span>
@@ -517,14 +517,14 @@ export const Simulation: React.FC<SimulationProps> = ({
               <button
                 onClick={generateDelays}
                 disabled={routeLoading || !routeRows.length}
-                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-[var(--accent-color)] text-white disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-[var(--accent-color)] text-white disabled:opacity-50 focus-ring active:scale-95 transition-transform duration-200 hover:opacity-90"
               >
                 Generar demoras
               </button>
               <button
                 onClick={clearDelays}
                 disabled={routeLoading || !routeRows.length}
-                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-black/5 dark:bg-white/5 border border-[var(--border-color)] disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-black/5 dark:bg-white/5 border border-[var(--border-color)] disabled:opacity-50 focus-ring active:scale-95 transition-transform duration-200 hover:bg-black/10 dark:hover:bg-white/10"
               >
                 Limpiar
               </button>
@@ -556,7 +556,7 @@ export const Simulation: React.FC<SimulationProps> = ({
         {!routeLoading && !routeError && (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[11px]">
-              <thead className="bg-black/5 dark:bg-white/5 text-[var(--text-secondary)] font-black uppercase tracking-widest">
+              <thead className="sticky top-0 z-10 bg-[var(--bg-surface)] shadow-[0_1px_0_0_var(--border-color)] text-[var(--text-secondary)] font-black uppercase tracking-widest text-[10px]">
                 <tr>
                   <th className="px-6 py-4">Fecha</th>
                   <th className="px-6 py-4">Ciclo</th>

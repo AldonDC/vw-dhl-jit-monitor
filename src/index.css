@@ -19,6 +19,15 @@
   --text-secondary: #475569;
   --accent-color: #001e50;
   --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  /* Estados semánticos (éxito, riesgo, crítico) */
+  --status-ok: #059669;
+  --status-ok-bg: rgba(5, 150, 105, 0.1);
+  --status-risk: #d97706;
+  --status-risk-bg: rgba(217, 119, 6, 0.1);
+  --status-critical: #dc2626;
+  --status-critical-bg: rgba(220, 38, 38, 0.1);
+  --transition-card: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-btn: 200ms ease;
 }
 
 /* Dark mode overrides - explicitly using .dark class */
@@ -31,6 +40,12 @@
   --text-secondary: #94a3b8;
   --accent-color: #3b82f6;
   --card-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+  --status-ok: #34d399;
+  --status-ok-bg: rgba(52, 211, 153, 0.12);
+  --status-risk: #fbbf24;
+  --status-risk-bg: rgba(251, 191, 36, 0.12);
+  --status-critical: #f87171;
+  --status-critical-bg: rgba(248, 113, 113, 0.12);
 }
 
 @layer base {
@@ -89,5 +104,15 @@
 
   .dark .custom-scrollbar::-webkit-scrollbar-thumb {
     background: #334155;
+  }
+
+  /* Focus visible para accesibilidad (teclado) */
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+  }
+
+  .focus-ring:focus:not(:focus-visible) {
+    outline: none;
   }
 }

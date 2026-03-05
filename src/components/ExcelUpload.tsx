@@ -26,7 +26,7 @@ export const ExcelUpload: React.FC = () => {
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 1.1 }}
                         onClick={handleUpload}
-                        className="flex items-center gap-3 px-6 py-3 bg-[var(--accent-color)] text-white text-[11px] font-black uppercase rounded-2xl shadow-xl shadow-blue-900/20 hover:scale-105 active:scale-95 transition-all group"
+                        className="flex items-center gap-3 px-6 py-3 bg-[var(--accent-color)] text-white text-[11px] font-black uppercase rounded-2xl shadow-xl shadow-blue-900/20 hover:scale-[1.02] active:scale-95 transition-transform duration-200 focus-ring group"
                     >
                         <Upload size={18} className="group-hover:-translate-y-1 transition-transform" />
                         Importar Excel JIT
