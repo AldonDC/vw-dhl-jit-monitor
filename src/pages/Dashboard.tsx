@@ -6,6 +6,7 @@ import { LogisticsTable } from '../components/LogisticsTable';
 import {
     BarChart,
     Bar,
+    Cell,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -106,6 +107,21 @@ function getCoverageHoursForDay(row: SimulationMatrixRow, day: string): number |
     }
 
     return stockBase / demandPerHour;
+}
+
+function getSaldoCoverageHoursForDay(row: SimulationMatrixRow, day: string): number | null {
+    const value = row.daily[day];
+    if (!value) return null;
+    if (typeof value.saldo !== 'number') return null;
+    if (typeof value.usedThatDay !== 'number' || value.usedThatDay <= 0) return null;
+
+    const demandPerHour =
+        typeof value.demandPerHour === 'number' && value.demandPerHour > 0
+            ? value.demandPerHour
+            : value.usedThatDay / 23;
+    if (!Number.isFinite(demandPerHour) || demandPerHour <= 0) return null;
+
+    return value.saldo / demandPerHour;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, delayAssignments }) => {
@@ -263,32 +279,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
         const coveragePct = countedLatest > 0 ? (coveredLatest / countedLatest) * 100 : 0;
         const avgCoverageHours = coverageHoursCount > 0 ? totalCoverageHours / coverageHoursCount : 0;
 
-        const lowCoverageTop5 = effectiveRows
-            .map((row) => {
-                let minHours: number | null = null;
-                for (const day of effectiveDays) {
-                    const coverage = getCoverageHoursForDay(row, day);
-                    if (coverage === null) continue;
-                    if (minHours === null || coverage < minHours) {
-                        minHours = coverage;
-                    }
-                }
+        const lowCoverageTop5 = latestDay
+            ? effectiveRows
+                .map((row) => {
+                    const hours = getSaldoCoverageHoursForDay(row, latestDay);
+                    if (hours === null || !Number.isFinite(hours)) return null;
 
-                if (minHours === null) return null;
-
-                return {
-                    np: row.np,
-                    zone: row.zonaLogistica,
-                    hours: Number(minHours.toFixed(2)),
-                };
-            })
-            .filter((entry): entry is { np: string; zone: string; hours: number } => Boolean(entry))
-            .sort((a, b) => a.hours - b.hours)
-            .slice(0, 5)
-            .map((entry) => ({
-                ...entry,
-                label: entry.np.length > 14 ? `${entry.np.slice(0, 14)}...` : entry.np,
-            }));
+                    return {
+                        np: row.np,
+                        zone: row.zonaLogistica,
+                        hours: Number(hours.toFixed(2)),
+                    };
+                })
+                .filter((entry): entry is { np: string; zone: string; hours: number } => Boolean(entry))
+                .sort((a, b) => a.hours - b.hours)
+                .slice(0, 5)
+                .map((entry) => {
+                    const rawLabel = `${entry.np} · ${entry.zone}`;
+                    return {
+                        ...entry,
+                        label: rawLabel.length > 28 ? `${rawLabel.slice(0, 28)}...` : rawLabel,
+                    };
+                })
+            : [];
 
         return {
             coveragePct: Number(coveragePct.toFixed(1)),
@@ -410,7 +423,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
         let red = 0, yellow = 0, green = 0;
         if (!latestDay) return { red, yellow, green, total: 0 };
         for (const row of effectiveRows) {
-            const hours = getCoverageHoursForDay(row, latestDay);
+            const hours = getSaldoCoverageHoursForDay(row, latestDay);
             if (hours === null || !Number.isFinite(hours)) continue;
             if (hours < 2) red += 1;
             else if (hours <= 4) yellow += 1;
@@ -851,7 +864,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
                                             boxShadow: '0 15px 30px -5px rgba(0, 0, 0, 0.2)',
                                         }}
                                     />
-                                    <Bar dataKey="hours" name="Horas" fill={isDark ? '#06b6d4' : '#0e7490'} radius={[0, 8, 8, 0]} barSize={24} />
+                                    <Bar dataKey="hours" name="Horas" radius={[0, 8, 8, 0]} barSize={24}>
+                                        {metrics.lowCoverageTop5.map((entry, index) => (
+                                            <Cell
+                                                key={`${entry.np}-${entry.zone}-${index}`}
+                                                fill={entry.hours < 0 ? '#dc2626' : (isDark ? '#06b6d4' : '#0e7490')}
+                                            />
+                                        ))}
+                                    </Bar>
                                 </BarChart>
                             </ResponsiveContainer>
                         )}

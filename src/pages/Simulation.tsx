@@ -30,6 +30,13 @@ interface SimulationProps {
   onProjectionPlanChange: (next: InventoryProjectionPlan | null) => void;
 }
 
+type InventorySortDirection = 'asc' | 'desc';
+
+interface InventorySortState {
+  key: string;
+  direction: InventorySortDirection;
+}
+
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const TARGET_ROUTE_SIMULATION_DAYS = 5;
 
@@ -103,6 +110,68 @@ function getStatusPill(status: SimulationMatrixRow['status']) {
   };
 }
 
+function getInventorySortValue(row: SimulationMatrixRow, key: string): string | number | null {
+  if (key.startsWith('used:')) {
+    const day = key.slice('used:'.length);
+    return row.daily[day]?.usedThatDay ?? null;
+  }
+
+  if (key.startsWith('saldo:')) {
+    const day = key.slice('saldo:'.length);
+    return row.daily[day]?.saldo ?? null;
+  }
+
+  switch (key) {
+    case 'np':
+      return row.np;
+    case 'disp':
+      return row.disp;
+    case 'existencias':
+      return row.existencias;
+    case 'stockZonLog':
+      return row.stockZonLog;
+    case 'stockProveedor':
+      return row.stockProveedor;
+    case 'estatusCap':
+      return row.estatusCap;
+    case 'description':
+      return row.description;
+    case 'nombre':
+      return row.nombre;
+    case 'zonaLogistica':
+      return row.zonaLogistica;
+    case 'status': {
+      const statusRank: Record<string, number> = {
+        CRITICO: 0,
+        RIESGO: 1,
+        CUBIERTO: 2,
+      };
+      return statusRank[row.status ?? 'CUBIERTO'] ?? 99;
+    }
+    default:
+      return null;
+  }
+}
+
+function compareInventoryValues(
+  aValue: string | number | null,
+  bValue: string | number | null,
+  direction: InventorySortDirection
+): number {
+  if (aValue === null && bValue === null) return 0;
+  if (aValue === null) return 1;
+  if (bValue === null) return -1;
+
+  let base = 0;
+  if (typeof aValue === 'number' && typeof bValue === 'number') {
+    base = aValue - bValue;
+  } else {
+    base = String(aValue).localeCompare(String(bValue), 'es', { sensitivity: 'base' });
+  }
+
+  return direction === 'asc' ? base : -base;
+}
+
 export const Simulation: React.FC<SimulationProps> = ({
   delayAssignments,
   onDelayAssignmentsChange,
@@ -121,6 +190,10 @@ export const Simulation: React.FC<SimulationProps> = ({
   const [routeError, setRouteError] = useState<string | null>(null);
   const [delayProbability, setDelayProbability] = useState(20);
   const [deletingProjection, setDeletingProjection] = useState(false);
+  const [inventorySort, setInventorySort] = useState<InventorySortState>({
+    key: 'np',
+    direction: 'asc',
+  });
 
   const loadInventorySimulation = useCallback(async () => {
     setInventoryLoading(true);
@@ -217,6 +290,18 @@ export const Simulation: React.FC<SimulationProps> = ({
       };
     });
   }, [rows, projectedRowsByPartZoneId]);
+
+  const sortedInventoryRows = useMemo(() => {
+    const rowsWithIndex = effectiveRows.map((row, index) => ({ row, index }));
+    rowsWithIndex.sort((a, b) => {
+      const aValue = getInventorySortValue(a.row, inventorySort.key);
+      const bValue = getInventorySortValue(b.row, inventorySort.key);
+      const compared = compareInventoryValues(aValue, bValue, inventorySort.direction);
+      if (compared !== 0) return compared;
+      return a.index - b.index;
+    });
+    return rowsWithIndex.map((entry) => entry.row);
+  }, [effectiveRows, inventorySort]);
 
   const effectiveLatestDate = useMemo(() => {
     if (!effectiveDays.length) return '--';
@@ -346,6 +431,26 @@ export const Simulation: React.FC<SimulationProps> = ({
     }
   }, [onProjectionPlanChange, onDelayAssignmentsChange, refreshAll]);
 
+  const handleInventorySort = useCallback((key: string) => {
+    setInventorySort((current) => {
+      if (current.key === key) {
+        return {
+          key,
+          direction: current.direction === 'asc' ? 'desc' : 'asc',
+        };
+      }
+      return {
+        key,
+        direction: 'asc',
+      };
+    });
+  }, []);
+
+  const getSortIndicator = useCallback((key: string) => {
+    if (inventorySort.key !== key) return '↕';
+    return inventorySort.direction === 'asc' ? '▲' : '▼';
+  }, [inventorySort]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -429,26 +534,34 @@ export const Simulation: React.FC<SimulationProps> = ({
             <table className="w-max min-w-full text-left text-[11px]">
               <thead className="sticky top-0 z-10 bg-[var(--bg-surface)] shadow-[0_1px_0_0_var(--border-color)] text-[var(--text-secondary)] font-black uppercase tracking-widest text-[10px]">
                 <tr>
-                  <th className="px-6 py-4">NP</th>
-                  <th className="px-6 py-4">Disp</th>
-                  <th className="px-6 py-4">Existencias</th>
-                  <th className="px-6 py-4">Stock Zon log</th>
-                  <th className="px-6 py-4">Stock Proveedor</th>
-                  <th className="px-6 py-4">Estatus cap</th>
-                  <th className="px-6 py-4">Descripcion</th>
-                  <th className="px-6 py-4">Nombre</th>
-                  <th className="px-6 py-4">Zona Logistica</th>
-                  <th className="px-6 py-4">Estatus</th>
+                  <th className="px-6 py-4"><button onClick={() => handleInventorySort('np')} className="inline-flex items-center gap-2 hover:text-blue-600">{`NP ${getSortIndicator('np')}`}</button></th>
+                  <th className="px-6 py-4"><button onClick={() => handleInventorySort('disp')} className="inline-flex items-center gap-2 hover:text-blue-600">{`Disp ${getSortIndicator('disp')}`}</button></th>
+                  <th className="px-6 py-4"><button onClick={() => handleInventorySort('existencias')} className="inline-flex items-center gap-2 hover:text-blue-600">{`Existencias ${getSortIndicator('existencias')}`}</button></th>
+                  <th className="px-6 py-4"><button onClick={() => handleInventorySort('stockZonLog')} className="inline-flex items-center gap-2 hover:text-blue-600">{`Stock Zon log ${getSortIndicator('stockZonLog')}`}</button></th>
+                  <th className="px-6 py-4"><button onClick={() => handleInventorySort('stockProveedor')} className="inline-flex items-center gap-2 hover:text-blue-600">{`Stock Proveedor ${getSortIndicator('stockProveedor')}`}</button></th>
+                  <th className="px-6 py-4"><button onClick={() => handleInventorySort('estatusCap')} className="inline-flex items-center gap-2 hover:text-blue-600">{`Estatus cap ${getSortIndicator('estatusCap')}`}</button></th>
+                  <th className="px-6 py-4"><button onClick={() => handleInventorySort('description')} className="inline-flex items-center gap-2 hover:text-blue-600">{`Descripcion ${getSortIndicator('description')}`}</button></th>
+                  <th className="px-6 py-4"><button onClick={() => handleInventorySort('nombre')} className="inline-flex items-center gap-2 hover:text-blue-600">{`Nombre ${getSortIndicator('nombre')}`}</button></th>
+                  <th className="px-6 py-4"><button onClick={() => handleInventorySort('zonaLogistica')} className="inline-flex items-center gap-2 hover:text-blue-600">{`Zona Logistica ${getSortIndicator('zonaLogistica')}`}</button></th>
+                  <th className="px-6 py-4"><button onClick={() => handleInventorySort('status')} className="inline-flex items-center gap-2 hover:text-blue-600">{`Estatus ${getSortIndicator('status')}`}</button></th>
                   {effectiveDays.map((day) => (
                     <React.Fragment key={day}>
-                      <th className="px-6 py-4 whitespace-nowrap">{formatDate(day)}</th>
-                      <th className="px-6 py-4">Saldo</th>
+                      <th className="px-6 py-4 whitespace-nowrap">
+                        <button onClick={() => handleInventorySort(`used:${day}`)} className="inline-flex items-center gap-2 hover:text-blue-600">
+                          {`${formatDate(day)} ${getSortIndicator(`used:${day}`)}`}
+                        </button>
+                      </th>
+                      <th className="px-6 py-4">
+                        <button onClick={() => handleInventorySort(`saldo:${day}`)} className="inline-flex items-center gap-2 hover:text-blue-600">
+                          {`Saldo ${getSortIndicator(`saldo:${day}`)}`}
+                        </button>
+                      </th>
                     </React.Fragment>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-color)] font-bold">
-                {effectiveRows.map((row, i) => {
+                {sortedInventoryRows.map((row, i) => {
                   const status = getStatusPill(row.status);
                   return (
                     <tr key={row.id} className={`hover:bg-blue-500/[0.06] dark:hover:bg-blue-500/10 transition-colors duration-200 ${i % 2 === 1 ? 'bg-black/[0.02] dark:bg-white/[0.02]' : ''}`}>
