@@ -17,8 +17,6 @@ export const ROUTES_DATA: RouteData[] = [
 ];
 
 export const ALERTS_DATA: Alert[] = [
-  { id: 1, type: 'crit', title: 'Critical Delay T32', desc: 'Brose unit stopped due to mechanical failure on Periférico.', time: '14:52', route: 'T32' },
-  { id: 2, type: 'warn', title: 'Window Variance T15', desc: 'Faurecia route nearing 20m delay limit.', time: '09:48', route: 'T15' },
 ];
 
 export const LOCATIONS = {
