@@ -14,6 +14,9 @@ const DEFAULT_DEMAND_PESSIMISM_FACTOR = 1.35;
 app.use(cors());
 app.use(express.json());
 
+// Export app for Vercel
+module.exports = app;
+
 function toIsoUtcDate(date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0)).toISOString();
 }
@@ -641,14 +644,16 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
-const server = app.listen(port, () => {
-  console.log(`API listening on http://localhost:${port}`);
-});
+if (require.main === module) {
+  const server = app.listen(port, () => {
+    console.log(`API listening on http://localhost:${port}`);
+  });
 
-const shutdown = async () => {
-  await prisma.$disconnect();
-  server.close(() => process.exit(0));
-};
+  const shutdown = async () => {
+    await prisma.$disconnect();
+    server.close(() => process.exit(0));
+  };
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
