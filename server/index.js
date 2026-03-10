@@ -6,12 +6,45 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const app = express();
 const port = Number(process.env.PORT || 4000);
+const configuredCorsOrigins = String(process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 const DEFAULT_BUSINESS_DAYS = 5;
 const DEFAULT_TRUCK_CAPACITY = 40;
 const DEFAULT_SUPPLIER_DAILY_INCREASE = 30;
 const DEFAULT_DEMAND_PESSIMISM_FACTOR = 1.35;
 
-app.use(cors());
+function isCorsOriginAllowed(origin) {
+  if (configuredCorsOrigins.length === 0) return true;
+
+  return configuredCorsOrigins.some((rule) => {
+    if (rule === "*") return true;
+    if (!rule.includes("*")) return rule === origin;
+
+    const pattern = `^${rule.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`;
+    return new RegExp(pattern).test(origin);
+  });
+}
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || isCorsOriginAllowed(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`CORS origin not allowed: ${origin}`));
+  },
+};
+
+app.use((req, res, next) => {
+  if (req.headers["access-control-request-private-network"] === "true") {
+    res.setHeader("Access-Control-Allow-Private-Network", "true");
+  }
+  next();
+});
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 function toIsoUtcDate(date) {
@@ -637,11 +670,19 @@ app.get("/api/recomendaciones/prioridad", async (req, res, next) => {
 });
 
 app.use((error, _req, res, _next) => {
+  if (error?.message?.startsWith("CORS origin not allowed:")) {
+    return res.status(403).json({ error: error.message });
+  }
   console.error("API error:", error);
   res.status(500).json({ error: "Internal server error" });
 });
 
 const server = app.listen(port, () => {
+  if (configuredCorsOrigins.length > 0) {
+    console.log(`CORS origins: ${configuredCorsOrigins.join(", ")}`);
+  } else {
+    console.log("CORS origins: * (all origins allowed)");
+  }
   console.log(`API listening on http://localhost:${port}`);
 });
 

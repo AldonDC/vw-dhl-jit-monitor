@@ -85,6 +85,40 @@ Para correr este proyecto localmente:
     npm run build
     ```
 
+## 🌐 Deploy Híbrido (Frontend en Vercel + Backend local SQLite)
+
+Este repo ya quedó configurado para mantener **SQLite en local** y desplegar solo el frontend en Vercel.
+
+1. **Backend local (Express + Prisma + SQLite)**  
+   ```bash
+   cd server
+   cp .env.example .env
+   npm install
+   npm run dev
+   ```
+   API por defecto: `http://localhost:4000`.
+
+2. **Configurar CORS del backend (opcional, recomendado en producción)**  
+   En `server/.env`, usa:
+   ```env
+   CORS_ORIGINS=https://tu-proyecto.vercel.app,https://*.vercel.app
+   ```
+   Si no defines `CORS_ORIGINS`, el backend permite todos los orígenes.
+
+3. **Desplegar frontend en Vercel**  
+   - Importa este repo en Vercel.
+   - Vercel construye con `npm run build` y sirve `dist` (configurado en `vercel.json`).
+   - Define la variable `VITE_API_URL` en Vercel:
+     - Uso personal (solo en tu máquina): `http://localhost:4000`
+     - Uso externo/compartido: URL HTTPS pública de un túnel hacia tu backend local.
+
+4. **(Opcional) Exponer backend local con túnel HTTPS**  
+   Ejemplo con Cloudflare Tunnel:
+   ```bash
+   cloudflared tunnel --url http://localhost:4000
+   ```
+   Luego usa esa URL como `VITE_API_URL` en Vercel.
+
 ---
 
 ## 📁 Data Compliance
