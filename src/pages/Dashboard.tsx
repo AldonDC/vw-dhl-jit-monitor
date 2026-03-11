@@ -57,6 +57,10 @@ interface RiskItem {
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const COVERAGE_TARGET = 95;
+const SEMAPHORE_RED_MAX_HOURS = 2;
+const SEMAPHORE_YELLOW_MAX_HOURS = 4;
+const TOP5_MAX_DISPLAY_HOURS = 8;
+const RED_FLOOR_HOURS = 1.5;
 
 function formatDay(value: string): string {
     return new Date(value).toLocaleDateString('es-MX', {
@@ -121,7 +125,27 @@ function getSaldoCoverageHoursForDay(row: SimulationMatrixRow, day: string): num
             : value.usedThatDay / 23;
     if (!Number.isFinite(demandPerHour) || demandPerHour <= 0) return null;
 
-    return value.saldo / demandPerHour;
+    // Keep dashboard aligned with saldo while avoiding a flat 0h visual for critical rows.
+    const rawHours = value.saldo / demandPerHour;
+    if (!Number.isFinite(rawHours)) return null;
+    if (rawHours <= 0) return RED_FLOOR_HOURS;
+    return Math.min(rawHours, TOP5_MAX_DISPLAY_HOURS);
+}
+
+function getDashboardStockHoursForDay(row: SimulationMatrixRow, day: string): number | null {
+    const saldoHours = getSaldoCoverageHoursForDay(row, day);
+    if (saldoHours !== null && Number.isFinite(saldoHours)) {
+        return saldoHours;
+    }
+    const coverageHours = getCoverageHoursForDay(row, day);
+    if (coverageHours === null || !Number.isFinite(coverageHours)) return null;
+    return Math.max(0, Math.min(coverageHours, TOP5_MAX_DISPLAY_HOURS));
+}
+
+function getStockHoursBucket(hours: number): 'red' | 'yellow' | 'green' {
+    if (hours < SEMAPHORE_RED_MAX_HOURS) return 'red';
+    if (hours <= SEMAPHORE_YELLOW_MAX_HOURS) return 'yellow';
+    return 'green';
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, delayAssignments }) => {
@@ -282,7 +306,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
         const lowCoverageTop5 = latestDay
             ? effectiveRows
                 .map((row) => {
-                    const hours = getSaldoCoverageHoursForDay(row, latestDay);
+                    const hours = getDashboardStockHoursForDay(row, latestDay);
                     if (hours === null || !Number.isFinite(hours)) return null;
 
                     return {
@@ -298,6 +322,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
                     const rawLabel = `${entry.np} · ${entry.zone}`;
                     return {
                         ...entry,
+                        bucket: getStockHoursBucket(entry.hours),
                         label: rawLabel.length > 28 ? `${rawLabel.slice(0, 28)}...` : rawLabel,
                     };
                 })
@@ -423,38 +448,61 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
         let red = 0, yellow = 0, green = 0;
         if (!latestDay) return { red, yellow, green, total: 0 };
         for (const row of effectiveRows) {
-            const hours = getSaldoCoverageHoursForDay(row, latestDay);
+            const hours = getDashboardStockHoursForDay(row, latestDay);
             if (hours === null || !Number.isFinite(hours)) continue;
-            if (hours < 2) red += 1;
-            else if (hours <= 4) yellow += 1;
+            const bucket = getStockHoursBucket(hours);
+            if (bucket === 'red') red += 1;
+            else if (bucket === 'yellow') yellow += 1;
             else green += 1;
         }
         return { red, yellow, green, total: red + yellow + green };
     }, [effectiveRows, latestDay]);
 
     const riskItems = useMemo(() => {
-        const list: RiskItem[] = [];
+        const criticalPieceAlerts: RiskItem[] = [];
+        const preventivePieceAlerts: RiskItem[] = [];
+        const criticalDelayAlerts: RiskItem[] = [];
+        const warningDelayAlerts: RiskItem[] = [];
 
         if (latestDay) {
             for (const row of effectiveRows) {
                 const value = row.daily[latestDay];
-                if (!value || typeof value.saldo !== 'number' || value.saldo >= 0) continue;
-                const shortage = Math.abs(value.saldo);
-                list.push({
-                    id: `shortage-${row.id}-${latestDay}`,
-                    type: 'crit',
-                    title: `Faltante critico · ${row.np}`,
-                    desc: `${row.zonaLogistica}: saldo ${value.saldo} pzas en ${formatDay(latestDay)}.`,
-                    time: formatDay(latestDay),
-                    route: row.np,
-                    score: shortage,
-                });
+                if (!value || typeof value.saldo !== 'number') continue;
+
+                const hours = getDashboardStockHoursForDay(row, latestDay);
+                const bucket = hours !== null && Number.isFinite(hours) ? getStockHoursBucket(hours) : null;
+
+                if (value.saldo < 0) {
+                    const shortage = Math.abs(value.saldo);
+                    criticalPieceAlerts.push({
+                        id: `shortage-${row.id}-${latestDay}`,
+                        type: 'crit',
+                        title: `Faltante critico · ${row.np}`,
+                        desc: `${row.zonaLogistica}: saldo ${value.saldo} pzas en ${formatDay(latestDay)}.`,
+                        time: formatDay(latestDay),
+                        route: row.np,
+                        score: shortage,
+                    });
+                    continue;
+                }
+
+                if (bucket === 'yellow' && hours !== null) {
+                    preventivePieceAlerts.push({
+                        id: `preventive-${row.id}-${latestDay}`,
+                        type: 'warn',
+                        title: `Alerta preventiva · ${row.np}`,
+                        desc: `${row.zonaLogistica}: cobertura ${hours.toFixed(1)} h (rango preventivo 2-4 h).`,
+                        time: formatDay(latestDay),
+                        route: row.np,
+                        score: Math.round((SEMAPHORE_YELLOW_MAX_HOURS - hours) * 100),
+                    });
+                }
             }
         }
 
         for (const delay of Object.values(delayAssignments)) {
             if (delay.minutes <= 0) continue;
-            list.push({
+            const delayItem: RiskItem = {
                 id: `delay-${delay.serviceDate ?? 'base'}-${delay.rowId}`,
                 type: delay.minutes >= 40 ? 'crit' : 'warn',
                 title: `${delay.eventLabel?.trim() ? delay.eventLabel : 'Demora pendiente'} (+${delay.minutes} min)`,
@@ -462,10 +510,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
                 time: formatDateTime(delay.appliedAt),
                 route: `${delay.routeCode}-C${String(delay.cycleNumber).padStart(2, '0')}`,
                 score: delay.minutes,
-            });
+            };
+            if (delayItem.type === 'crit') {
+                criticalDelayAlerts.push(delayItem);
+            } else {
+                warningDelayAlerts.push(delayItem);
+            }
         }
 
-        return list.sort((a, b) => b.score - a.score).slice(0, 8);
+        return [
+            ...criticalPieceAlerts.sort((a, b) => b.score - a.score).slice(0, 4),
+            ...criticalDelayAlerts.sort((a, b) => b.score - a.score).slice(0, 2),
+            ...preventivePieceAlerts.sort((a, b) => b.score - a.score).slice(0, 4),
+            ...warningDelayAlerts.sort((a, b) => b.score - a.score).slice(0, 2),
+        ].slice(0, 10);
     }, [effectiveRows, latestDay, delayAssignments]);
 
     const coverageVariance = Number((metrics.coveragePct - COVERAGE_TARGET).toFixed(1));
@@ -501,7 +559,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
                     ))}
                     {!effectiveDays.length && (
                         <div className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">
-                            Sin datos de simulacion
+                            Sin datos de simulación
                         </div>
                     )}
                 </div>
@@ -852,7 +910,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={metrics.lowCoverageTop5} layout="vertical" margin={{ left: 18, right: 20 }}>
                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={gridColor} />
-                                    <XAxis type="number" stroke={textColor} fontSize={10} tickLine={false} axisLine={false} tick={{ fontWeight: 900 }} />
+                                    <XAxis type="number" domain={[0, TOP5_MAX_DISPLAY_HOURS]} stroke={textColor} fontSize={10} tickLine={false} axisLine={false} tick={{ fontWeight: 900 }} />
                                     <YAxis type="category" dataKey="label" width={130} stroke={textColor} fontSize={10} tickLine={false} axisLine={false} tick={{ fontWeight: 900 }} />
                                     <Tooltip
                                         contentStyle={{
@@ -864,11 +922,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
                                             boxShadow: '0 15px 30px -5px rgba(0, 0, 0, 0.2)',
                                         }}
                                     />
-                                    <Bar dataKey="hours" name="Horas" radius={[0, 8, 8, 0]} barSize={24}>
+                                    <Bar dataKey="hours" name="Horas" radius={[0, 8, 8, 0]} barSize={24} minPointSize={6}>
                                         {metrics.lowCoverageTop5.map((entry, index) => (
                                             <Cell
                                                 key={`${entry.np}-${entry.zone}-${index}`}
-                                                fill={entry.hours < 0 ? '#dc2626' : (isDark ? '#06b6d4' : '#0e7490')}
+                                                fill={entry.bucket === 'red' ? '#dc2626' : entry.bucket === 'yellow' ? '#f59e0b' : '#16a34a'}
                                             />
                                         ))}
                                     </Bar>
@@ -899,7 +957,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
                         <ShieldAlert size={20} aria-hidden />
                         Riesgos operativos
                     </h3>
-                    <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-3 mb-6 opacity-90">Faltantes críticos y demoras que requieren atención.</p>
+                    <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-3 mb-6 opacity-90">Faltantes críticos, alertas preventivas por pieza y demoras que requieren atención.</p>
 
                     {loading && (
                         <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[var(--text-secondary)]">Cargando metricas...</p>
@@ -913,7 +971,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
                         <div className="space-y-6 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
                             {riskItems.length === 0 && (
                                 <div className="p-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">
-                                    Sin riesgos criticos detectados por el momento.
+                                    Sin riesgos criticos o preventivos detectados por el momento.
                                 </div>
                             )}
                             {riskItems.map((item, i) => (
@@ -922,9 +980,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ theme, projectionPlan, del
                                     initial={{ opacity: 0, x: 20 }}
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: i * 0.05, duration: 0.25 }}
-                                    className="p-6 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-color)] shadow-md relative overflow-hidden group hover:border-red-500/30 hover:shadow-lg transition-all duration-200"
+                                    className={`p-6 rounded-2xl bg-[var(--bg-surface)] border shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-200 ${item.type === 'crit' ? 'border-[var(--border-color)] hover:border-red-500/30' : 'border-amber-500/20 hover:border-amber-500/40'}`}
                                 >
-                                    <div className="absolute top-0 right-0 w-16 h-16 bg-red-500/10 blur-xl group-hover:bg-red-500/20 transition-all duration-300"></div>
+                                    <div className={`absolute top-0 right-0 w-16 h-16 blur-xl transition-all duration-300 ${item.type === 'crit' ? 'bg-red-500/10 group-hover:bg-red-500/20' : 'bg-amber-500/10 group-hover:bg-amber-500/20'}`}></div>
                                     <div className="flex justify-between items-start mb-3 relative z-10">
                                         <span className={`inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] ${item.type === 'crit' ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
                                             {item.type === 'crit' ? <ShieldAlert size={12} aria-hidden /> : <AlertTriangle size={12} aria-hidden />}

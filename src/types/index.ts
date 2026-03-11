@@ -143,3 +143,19 @@ export interface InventoryProjectionPlan {
 }
 
 export type Theme = 'light' | 'dark';
+
+export interface RouteSimulationSyncDetail {
+  isPlaying: boolean;
+  progress: number;
+  cycleNumber: number | null;
+  routeCode: string | null;
+  supplierName: string | null;
+  logisticZoneLabel: string | null;
+  serviceDate: string | null;
+  eventDelayMinutes: number;
+  carriedDelayMinutes: number;
+  totalDelayMinutes: number;
+  delayLabel: string | null;
+}
+
+export const ROUTE_SIMULATION_SYNC_EVENT = 'route-cycles-sync';

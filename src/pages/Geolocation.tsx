@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
 import { LOCATIONS, VEHICLES, ROUTE_PATHS, TRIPS_T28, ROUTES_DATA } from '../data/mockData';
 import type { Trip } from '../data/mockData';
 import logoVw from '../assets/logo-vw.png';
+import type { RouteSimulationSyncDetail } from '../types';
+import { ROUTE_SIMULATION_SYNC_EVENT } from '../types';
 import L from 'leaflet';
 import { Map as MapIcon, Layers, Navigation, Compass, X, Route, Clock } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
@@ -14,6 +16,56 @@ type RouteInfo = {
   trips: Trip[];
   path: [number, number][];
 };
+
+type Checkpoint = {
+  id: string;
+  label: string;
+  threshold: number;
+};
+
+type CheckpointLog = {
+  id: string;
+  label: string;
+  note: string;
+  isDelayed: boolean;
+  cycleNumber: number | null;
+};
+
+const FIXED_T28_PATH: [number, number][] = [
+  LOCATIONS.AKSYS,
+  [19.1102, -98.2194],
+  [19.1136, -98.2248],
+  LOCATIONS.FINSA,
+  [19.1199, -98.2362],
+  LOCATIONS.NAVE_21,
+  [19.1253, -98.2451],
+  LOCATIONS.PLANTA_VW,
+];
+
+const CHECKPOINTS: Checkpoint[] = [
+  { id: 'depart-aksys', label: 'Salida AKSYS', threshold: 0 },
+  { id: 'mid-to-vw', label: 'Mitad AKSYS -> VW', threshold: 0.25 },
+  { id: 'arrive-vw', label: 'Llegada VW', threshold: 0.5 },
+  { id: 'depart-vw', label: 'Salida VW', threshold: 0.55 },
+  { id: 'mid-to-aksys', label: 'Mitad VW -> AKSYS', threshold: 0.78 },
+  { id: 'arrive-aksys', label: 'Llegada AKSYS', threshold: 1 },
+];
+
+const INITIAL_SYNC_STATE: RouteSimulationSyncDetail = {
+  isPlaying: false,
+  progress: 0,
+  cycleNumber: null,
+  routeCode: null,
+  supplierName: null,
+  logisticZoneLabel: null,
+  serviceDate: null,
+  eventDelayMinutes: 0,
+  carriedDelayMinutes: 0,
+  totalDelayMinutes: 0,
+  delayLabel: null,
+};
+
+const FIXED_GOOGLE_MAPS_URL = 'https://www.google.com/maps/search/Planta+Volkswagen+Puebla+nave+4/@19.124494,-98.2487037,17.52z?entry=ttu&g_ep=EgoyMDI2MDMwOC4wIKXMDSoASAFQAw%3D%3D';
 
 
 // --- HELPER COMPONENTS TO CONTROL THE MAP ---
@@ -133,23 +185,9 @@ const pointAtProgress = (pts: [number, number][], progress01: number) => {
   return pts[pts.length - 1];
 };
 
-const hhmmToMinutes = (hhmm: string) => {
-  const [h, m] = hhmm.split(':').map((v) => parseInt(v, 10));
-  // handle invalid
-  if (Number.isNaN(h) || Number.isNaN(m)) return 0;
-  return h * 60 + m;
-};
-
-const durationMinutes = (depart: string, arrive: string) => {
-  const d = hhmmToMinutes(depart);
-  const a = hhmmToMinutes(arrive);
-  // handle overnight (e.g., 22:50 -> 00:00)
-  return a >= d ? a - d : (24 * 60 - d) + a;
-};
-
 // Rutas con geometría + datos para match y popup
 const ROUTES_WITH_INFO: RouteInfo[] = Object.keys(ROUTE_PATHS).map((routeId) => {
-  const path = ROUTE_PATHS[routeId] ?? [];
+  const path = routeId === 'T28' ? FIXED_T28_PATH : (ROUTE_PATHS[routeId] ?? []);
   const routeData = ROUTES_DATA.find((r) => r.id === routeId) ?? {
     id: routeId,
     prov: '-',
@@ -169,71 +207,114 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
     const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
     const [selectedRoute, setSelectedRoute] = useState<RouteInfo | null>(null);
     const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
+    const [syncState, setSyncState] = useState<RouteSimulationSyncDetail>(INITIAL_SYNC_STATE);
+    const [checkpointLogs, setCheckpointLogs] = useState<CheckpointLog[]>([]);
     const isDark = theme === 'dark';
+    const lastCheckpointIndexRef = useRef(-1);
+    const lastCycleRef = useRef('');
 
     const openRouteInfo = useCallback((info: RouteInfo) => setSelectedRoute(info), []);
     const closeRouteInfo = useCallback(() => setSelectedRoute(null), []);
 
-    // Simulation controls
-    // Real route is ~40 min; we compress to 10 min => 4x speed.
-    const SIM_SPEED = 4; // 1 = real time, 4 = 4x faster
-
-    // Start the simulation at 06:00 (PDF first depart). We advance a simulated minute clock.
-    const [simMinutes, setSimMinutes] = useState(() => hhmmToMinutes('06:00'));
-
     useEffect(() => {
-      const t = setInterval(() => {
-        // Each real second advances SIM_SPEED seconds; convert to minutes
-        setSimMinutes((prev) => {
-          const next = prev + (SIM_SPEED / 60); // minutes per second
-          return next >= 24 * 60 ? next - 24 * 60 : next;
-        });
-      }, 1000);
-      return () => clearInterval(t);
+      const handleSync = (event: Event) => {
+        const customEvent = event as CustomEvent<RouteSimulationSyncDetail>;
+        if (!customEvent.detail) return;
+        setSyncState(customEvent.detail);
+      };
+      const cachedSync = (window as Window & { __routeSimulationSync?: RouteSimulationSyncDetail }).__routeSimulationSync;
+      if (cachedSync) {
+        setSyncState(cachedSync);
+      }
+      window.addEventListener(ROUTE_SIMULATION_SYNC_EVENT, handleSync as EventListener);
+      return () => window.removeEventListener(ROUTE_SIMULATION_SYNC_EVENT, handleSync as EventListener);
     }, []);
 
-    const t28Path = useMemo(() => ROUTE_PATHS.T28 ?? [], []);
+    const t28Path = useMemo(() => FIXED_T28_PATH, []);
+    const reverseT28Path = useMemo(() => [...t28Path].reverse() as [number, number][], [t28Path]);
+    const normalizedProgress = useMemo(
+      () => Math.max(0, Math.min(1, syncState.progress)),
+      [syncState.progress]
+    );
+    const isOutbound = normalizedProgress <= 0.5;
+    const segmentProgress = isOutbound ? normalizedProgress * 2 : (normalizedProgress - 0.5) * 2;
+    const vehiclePos = useMemo(
+      () => pointAtProgress(isOutbound ? t28Path : reverseT28Path, segmentProgress),
+      [isOutbound, reverseT28Path, segmentProgress, t28Path]
+    );
 
-    // Pick the active trip based on the simulated time; if none active, keep last known position.
     const activeTrip = useMemo(() => {
-      // Expand each trip into a time window in minutes, considering overnight.
-      const now = simMinutes;
-      for (const trip of TRIPS_T28) {
-        const start = hhmmToMinutes(trip.depart);
-        const dur = durationMinutes(trip.depart, trip.arrive);
-        const end = (start + dur) % (24 * 60);
+      if (!syncState.cycleNumber || syncState.cycleNumber <= 0) return null;
+      return TRIPS_T28[syncState.cycleNumber - 1] ?? null;
+    }, [syncState.cycleNumber]);
 
-        const isOvernight = end < start;
-        const inWindow = isOvernight
-          ? (now >= start || now <= end)
-          : (now >= start && now <= end);
-
-        if (inWindow) {
-          // compute progress within the window
-          const elapsed = isOvernight
-            ? (now >= start ? now - start : (24 * 60 - start) + now)
-            : (now - start);
-
-          const progress = dur === 0 ? 1 : Math.min(1, Math.max(0, elapsed / dur));
-          return { trip, progress };
+    const activeCheckpoint = useMemo(() => {
+      let index = 0;
+      for (let i = 0; i < CHECKPOINTS.length; i++) {
+        if (normalizedProgress + 1e-9 >= CHECKPOINTS[i].threshold) {
+          index = i;
         }
       }
-      return null;
-    }, [simMinutes]);
+      return { index, checkpoint: CHECKPOINTS[index] };
+    }, [normalizedProgress]);
 
-    const [vehiclePos, setVehiclePos] = useState<[number, number]>(VEHICLES[0]?.pos ?? LOCATIONS.AKSYS);
+    const cycleKey = `${syncState.serviceDate ?? 'base'}|${syncState.cycleNumber ?? 'none'}`;
 
     useEffect(() => {
-      if (!activeTrip) return;
-      setVehiclePos(pointAtProgress(t28Path, activeTrip.progress));
-    }, [activeTrip, t28Path]);
+      const cycleChanged = cycleKey !== lastCycleRef.current;
+      if (cycleChanged) {
+        lastCycleRef.current = cycleKey;
+        lastCheckpointIndexRef.current = -1;
+        setCheckpointLogs([]);
+      }
+      if (activeCheckpoint.index < lastCheckpointIndexRef.current) {
+        lastCheckpointIndexRef.current = -1;
+        setCheckpointLogs([]);
+      }
+      if (!syncState.routeCode) return;
+      if (activeCheckpoint.index <= lastCheckpointIndexRef.current) return;
 
-    const simClockLabel = useMemo(() => {
-      const total = Math.floor(simMinutes);
-      const hh = String(Math.floor(total / 60)).padStart(2, '0');
-      const mm = String(total % 60).padStart(2, '0');
-      return `${hh}:${mm}`;
-    }, [simMinutes]);
+      const newLogs: CheckpointLog[] = [];
+      for (let i = lastCheckpointIndexRef.current + 1; i <= activeCheckpoint.index; i++) {
+        const cp = CHECKPOINTS[i];
+        const delaySuffix = syncState.delayLabel ? ` · ${syncState.delayLabel}` : '';
+        let note = 'Sin retraso reportado';
+        if (syncState.totalDelayMinutes > 0) {
+          if (cp.id === 'arrive-vw') {
+            note = `Arribo con retraso +${syncState.totalDelayMinutes} min${delaySuffix}`;
+          } else if (cp.id === 'depart-aksys' || cp.id === 'depart-vw') {
+            note = `Salida con arrastre +${syncState.carriedDelayMinutes} min`;
+          } else {
+            note = `Retraso acumulado +${syncState.totalDelayMinutes} min${delaySuffix}`;
+          }
+        }
+        newLogs.unshift({
+          id: `${cycleKey}-${cp.id}`,
+          label: cp.label,
+          note,
+          isDelayed: syncState.totalDelayMinutes > 0,
+          cycleNumber: syncState.cycleNumber,
+        });
+      }
+      if (newLogs.length > 0) {
+        setCheckpointLogs((prev) => [...newLogs, ...prev].slice(0, 6));
+      }
+      lastCheckpointIndexRef.current = activeCheckpoint.index;
+    }, [
+      cycleKey,
+      activeCheckpoint.index,
+      syncState.routeCode,
+      syncState.totalDelayMinutes,
+      syncState.carriedDelayMinutes,
+      syncState.delayLabel,
+      syncState.cycleNumber,
+    ]);
+
+    const vehicleStatus: 'moving' | 'stopped' = syncState.isPlaying ? 'moving' : 'stopped';
+    const latestCheckpoint = checkpointLogs[0] ?? null;
+    const cycleLabel = syncState.cycleNumber ? `C${String(syncState.cycleNumber).padStart(2, '0')}` : 'C--';
+    const simulationLabel = `${cycleLabel} · ${Math.round(normalizedProgress * 100)}%`;
+    const directionLabel = isOutbound ? 'AKSYS -> VW' : 'VW -> AKSYS';
 
     return (
         <motion.div
@@ -298,24 +379,33 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
                 </Marker>
 
                 {VEHICLES.map((v, i) => (
-                    <Marker key={i} position={vehiclePos} icon={createVehicleMarker(v.status, v.id)}>
+                    <Marker key={i} position={vehiclePos} icon={createVehicleMarker(vehicleStatus, v.id)}>
                         <Popup className="vehicle-popup-pro">
                             <div className="min-w-[180px] p-2">
                                 <span className="font-black text-blue-600 block mb-1 uppercase tracking-widest text-[9px]">Live Tracker</span>
                                 <span className="font-black text-lg uppercase">{v.id}</span>
                                 <div className="mt-3 space-y-2 border-t pt-2 border-slate-100">
-                                    <div className="flex justify-between text-[10px] font-black uppercase"><span>Status</span><span className={v.status === 'moving' ? 'text-emerald-500' : 'text-red-500'}>{v.status}</span></div>
                                     <div className="flex justify-between text-[10px] font-black uppercase">
-                                      <span>Sim Clock</span>
-                                      <span className="text-blue-600">{simClockLabel}</span>
+                                      <span>Status</span>
+                                      <span className={vehicleStatus === 'moving' ? 'text-emerald-500' : 'text-amber-500'}>
+                                        {vehicleStatus === 'moving' ? 'moving' : 'paused'}
+                                      </span>
                                     </div>
                                     <div className="flex justify-between text-[10px] font-black uppercase">
-                                      <span>Trip</span>
-                                      <span className="text-slate-600">{activeTrip ? activeTrip.trip.id : 'IDLE'}</span>
+                                      <span>Sim</span>
+                                      <span className="text-blue-600">{simulationLabel}</span>
+                                    </div>
+                                    <div className="flex justify-between text-[10px] font-black uppercase">
+                                      <span>Checkpoint</span>
+                                      <span className="text-slate-600">{activeCheckpoint.checkpoint.label}</span>
+                                    </div>
+                                    <div className="flex justify-between text-[10px] font-black uppercase">
+                                      <span>Ruta</span>
+                                      <span className="text-slate-600">{directionLabel}</span>
                                     </div>
                                     <div className="flex justify-between text-[10px] font-black uppercase">
                                       <span>Zone</span>
-                                      <span className="text-slate-600">{activeTrip ? activeTrip.trip.zone : '-'}</span>
+                                      <span className="text-slate-600">{syncState.logisticZoneLabel ?? activeTrip?.zone ?? '-'}</span>
                                     </div>
                                 </div>
                             </div>
@@ -339,21 +429,30 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
                             <div className="w-1.5 h-5 bg-[#001e50] dark:bg-blue-500 rounded-full" />
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Flota · Live</span>
                         </div>
-                        <span className="text-[10px] font-mono font-black text-blue-600 dark:text-blue-400 tabular-nums">{simClockLabel}</span>
+                        <span className="text-[10px] font-mono font-black text-blue-600 dark:text-blue-400 tabular-nums">{simulationLabel}</span>
                     </div>
                     <div className="p-4 space-y-4">
                         {VEHICLES.map((v, i) => (
                             <div key={i} className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${v.status === 'moving' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-amber-500'}`} />
+                                    <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${vehicleStatus === 'moving' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-amber-500'}`} />
                                     <div>
                                         <p className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">{v.id}</p>
-                                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Ruta {v.route} · {activeTrip ? activeTrip.trip.id : 'IDLE'}</p>
+                                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Ruta {syncState.routeCode ?? v.route} · {activeTrip?.id ?? cycleLabel}</p>
                                     </div>
                                 </div>
                                 <Navigation size={16} className="text-slate-300 dark:text-slate-500 shrink-0" />
                             </div>
                         ))}
+                    </div>
+                    <div className="px-4 pb-3">
+                        <div className={`rounded-xl border px-3 py-2 ${syncState.totalDelayMinutes > 0 ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700/60' : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700/60'}`}>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Checkpoint actual</p>
+                            <p className="text-[11px] font-black text-slate-800 dark:text-slate-100 mt-1">{activeCheckpoint.checkpoint.label}</p>
+                            <p className={`text-[9px] font-black uppercase tracking-wider mt-1 ${latestCheckpoint?.isDelayed ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
+                                {latestCheckpoint?.note ?? (syncState.totalDelayMinutes > 0 ? `Retraso +${syncState.totalDelayMinutes} min` : 'Sin retraso')}
+                            </p>
+                        </div>
                     </div>
                     <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/50">
                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Leyenda</p>
@@ -371,19 +470,21 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
             <div className="absolute bottom-6 left-6 right-6 z-[1000] flex justify-between items-center pointer-events-none gap-4">
                 <div className="pointer-events-auto flex items-center gap-4 px-5 py-3 rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-600 shadow-xl">
                     <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">En línea</span>
+                        <div className={`w-2 h-2 rounded-full ${syncState.isPlaying ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                            {syncState.isPlaying ? 'En movimiento' : 'Pausado'}
+                        </span>
                     </div>
                     <div className="w-px h-5 bg-slate-200 dark:bg-slate-600" />
                     <div className="flex items-center gap-2 text-[#001e50] dark:text-blue-400">
                         <MapIcon size={16} />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Sector {activeTrip ? activeTrip.trip.zone : '—'}</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest">Sector {syncState.logisticZoneLabel ?? activeTrip?.zone ?? '—'}</span>
                     </div>
                     <div className="w-px h-5 bg-slate-200 dark:bg-slate-600" />
-                    <span className="text-[10px] font-mono font-black text-slate-600 dark:text-slate-300 tabular-nums">Sim {simClockLabel}</span>
+                    <span className="text-[10px] font-mono font-black text-slate-600 dark:text-slate-300 tabular-nums">Sim {simulationLabel}</span>
                 </div>
                 <div className="pointer-events-auto px-5 py-3 rounded-2xl bg-[#001e50] dark:bg-[#001e50] border border-[#001e50]/80 shadow-xl">
-                    <span className="text-[10px] font-black italic uppercase tracking-tight text-[#ffcc00]">DHL · Logistics Command</span>
+                    <span className="text-[10px] font-black italic uppercase tracking-tight text-[#ffcc00]">AKSYS · Logistics Command</span>
                 </div>
             </div>
 
@@ -438,7 +539,17 @@ export const Geolocation: React.FC<{ theme: 'light' | 'dark' }> = ({ theme }) =>
                           ))}
                         </ul>
                       </div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Haz clic en la ruta en el mapa para ver esta info</p>
+                      <div className="space-y-2">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ruta fija sincronizada con Route Cycles</p>
+                        <a
+                          href={FIXED_GOOGLE_MAPS_URL}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          Ver referencia en Google Maps
+                        </a>
+                      </div>
                     </div>
                   </div>
                 </motion.div>

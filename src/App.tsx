@@ -180,7 +180,7 @@ const App: React.FC = () => {
                 <img src={logoVw} alt="VW" className="w-full h-full object-contain" />
               </div>
               <div className="flex flex-col overflow-hidden">
-                <span className="text-sm font-black truncate uppercase tracking-tight text-[var(--text-primary)]">Admin DHL</span>
+                <span className="text-sm font-black truncate uppercase tracking-tight text-[var(--text-primary)]">Admin AKSYS</span>
                 <span className="text-[10px] text-[var(--text-secondary)] font-black uppercase tracking-[0.2em] mt-0.5">Control Supervisor</span>
               </div>
             </div>
@@ -190,7 +190,7 @@ const App: React.FC = () => {
               onClick={() => setActivePage('dhl')}
               className={`${isSidebarOpen ? 'flex-1' : 'w-12'} text-center py-2.5 bg-yellow-400 text-black text-[10px] font-black rounded-xl uppercase shadow-lg shadow-yellow-400/20 active:scale-95 transition-transform ${activePage === 'dhl' ? 'ring-2 ring-offset-2 ring-yellow-300 ring-offset-transparent' : ''}`}
             >
-              DHL
+              AKSYS
             </button>
             <span className={`${isSidebarOpen ? 'flex-1' : 'w-12 h-9'} flex items-center justify-center py-2.5 bg-white text-[#001e50] text-[10px] font-black rounded-xl uppercase shadow-lg shadow-black/10 active:scale-95 transition-transform overflow-hidden`}>
               <img src={logoVw} alt="VW" className="h-4 object-contain" />
