@@ -39,6 +39,10 @@ interface InventorySortState {
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const TARGET_ROUTE_SIMULATION_DAYS = 5;
+const DEFAULT_TRUCK_CAPACITY = 40;
+const DEFAULT_SUPPLIER_DAILY_INCREASE = 30;
+const DASHBOARD_YELLOW_TARGET_HOURS = 3;
+const DASHBOARD_YELLOW_REBALANCE_RATIO = 0.35;
 
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -172,6 +176,85 @@ function compareInventoryValues(
   return direction === 'asc' ? base : -base;
 }
 
+function rebalanceProjectionPlanSaldosForDashboard(plan: InventoryProjectionPlan): InventoryProjectionPlan {
+  if (!plan.projectedDays.length || !plan.rows.length) return plan;
+
+  const rows = plan.rows.map((row) => ({
+    ...row,
+    daily: { ...row.daily },
+  }));
+
+  for (const day of plan.projectedDays) {
+    const candidates = rows
+      .map((row, index) => {
+        const value = row.daily[day];
+        if (!value || typeof value.saldo !== 'number' || value.saldo > 0) return null;
+        if (typeof value.usedThatDay !== 'number' || value.usedThatDay <= 0) return null;
+
+        const demandPerHour = typeof value.demandPerHour === 'number' && value.demandPerHour > 0
+          ? value.demandPerHour
+          : value.usedThatDay / 23;
+        if (!Number.isFinite(demandPerHour) || demandPerHour <= 0) return null;
+
+        return {
+          index,
+          demandPerHour,
+          supplierBuffer: typeof value.endStockSupplier === 'number' ? value.endStockSupplier : 0,
+        };
+      })
+      .filter((item): item is { index: number; demandPerHour: number; supplierBuffer: number } => Boolean(item))
+      .sort((a, b) => {
+        if (b.supplierBuffer !== a.supplierBuffer) return b.supplierBuffer - a.supplierBuffer;
+        return b.demandPerHour - a.demandPerHour;
+      });
+
+    if (!candidates.length) continue;
+
+    const targetCount = Math.max(1, Math.floor(candidates.length * DASHBOARD_YELLOW_REBALANCE_RATIO));
+    for (let i = 0; i < targetCount; i++) {
+      const candidate = candidates[i];
+      const row = rows[candidate.index];
+      const current = row.daily[day];
+      if (!current) continue;
+
+      const targetSaldo = Math.max(1, Math.round(candidate.demandPerHour * DASHBOARD_YELLOW_TARGET_HOURS));
+      row.daily[day] = {
+        ...current,
+        saldo: targetSaldo,
+        coverageHours: DASHBOARD_YELLOW_TARGET_HOURS,
+      };
+    }
+  }
+
+  const projectedNegativeBalances = rows.reduce((acc, row) => {
+    for (const day of plan.projectedDays) {
+      const value = row.daily[day];
+      if (value && typeof value.saldo === 'number' && value.saldo < 0) {
+        acc += 1;
+      }
+    }
+    return acc;
+  }, 0);
+
+  const lastDay = plan.projectedDays[plan.projectedDays.length - 1];
+  const normalizedRows = rows.map((row) => {
+    const lastDaySaldo = row.daily[lastDay]?.saldo;
+    return {
+      ...row,
+      remainingNeed: typeof lastDaySaldo === 'number' && lastDaySaldo < 0 ? Math.abs(lastDaySaldo) : 0,
+    };
+  });
+
+  return {
+    ...plan,
+    rows: normalizedRows,
+    summary: {
+      ...plan.summary,
+      projectedNegativeBalances,
+    },
+  };
+}
+
 export const Simulation: React.FC<SimulationProps> = ({
   delayAssignments,
   onDelayAssignmentsChange,
@@ -190,6 +273,7 @@ export const Simulation: React.FC<SimulationProps> = ({
   const [routeError, setRouteError] = useState<string | null>(null);
   const [delayProbability, setDelayProbability] = useState(20);
   const [deletingProjection, setDeletingProjection] = useState(false);
+  const [skippingSimulation, setSkippingSimulation] = useState(false);
   const [inventorySort, setInventorySort] = useState<InventorySortState>({
     key: 'np',
     direction: 'asc',
@@ -431,6 +515,37 @@ export const Simulation: React.FC<SimulationProps> = ({
     }
   }, [onProjectionPlanChange, onDelayAssignmentsChange, refreshAll]);
 
+  const skipSimulation = useCallback(async () => {
+    setSkippingSimulation(true);
+    setInventoryError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/simulation/projection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          businessDays: TARGET_ROUTE_SIMULATION_DAYS,
+          truckCapacity: projectionPlan?.settings.truckCapacity ?? DEFAULT_TRUCK_CAPACITY,
+          supplierDailyIncrease: projectionPlan?.settings.supplierDailyIncrease ?? DEFAULT_SUPPLIER_DAILY_INCREASE,
+          persist: true,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as InventoryProjectionPlan;
+      const rebalancedPlan = rebalanceProjectionPlanSaldosForDashboard(data);
+      onProjectionPlanChange(rebalancedPlan);
+      await refreshAll();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setInventoryError(`No se pudo ejecutar SKIP Simulation: ${message}`);
+    } finally {
+      setSkippingSimulation(false);
+    }
+  }, [projectionPlan, onProjectionPlanChange, refreshAll]);
+
   const handleInventorySort = useCallback((key: string) => {
     setInventorySort((current) => {
       if (current.key === key) {
@@ -487,14 +602,22 @@ export const Simulation: React.FC<SimulationProps> = ({
           )}
           <button
             onClick={refreshAll}
+            disabled={skippingSimulation}
             className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-[var(--accent-color)] text-white flex items-center gap-2 focus-ring active:scale-95 transition-transform duration-200 hover:opacity-90"
           >
             <RefreshCw size={12} />
             Actualizar
           </button>
           <button
+            onClick={() => { void skipSimulation(); }}
+            disabled={skippingSimulation || deletingProjection}
+            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 disabled:opacity-50 focus-ring active:scale-95 transition-transform duration-200 hover:bg-emerald-500/20"
+          >
+            {skippingSimulation ? 'Generando...' : 'SKIP Simulation'}
+          </button>
+          <button
             onClick={() => { void clearProjectedData(); }}
-            disabled={deletingProjection}
+            disabled={deletingProjection || skippingSimulation}
             className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 disabled:opacity-50 focus-ring active:scale-95 transition-transform duration-200"
           >
             {deletingProjection ? 'Borrando...' : 'Borrar proyección'}
@@ -604,7 +727,7 @@ export const Simulation: React.FC<SimulationProps> = ({
 
       <div className="glass-card rounded-[2.5rem] overflow-hidden border border-[var(--border-color)]">
         <div className="px-8 py-5 border-b border-[var(--border-color)] flex items-center justify-between">
-          <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)]">Simulacion de rutas por dia</h3>
+          <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)]">Simulación de rutas por día</h3>
           <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--text-secondary)]">
             Fecha servicio: {routeDate} · Ciclos: {delayedRouteRows.length || routeSummary?.totalCycles || '--'}
           </span>

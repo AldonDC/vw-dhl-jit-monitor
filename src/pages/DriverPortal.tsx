@@ -128,7 +128,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       className="space-y-8 pb-10"
     >
       <div className="glass-card rounded-[2.5rem] p-8 border border-[var(--border-color)] transition-shadow duration-300 hover:shadow-lg">
-        <h2 className="text-2xl font-black text-[var(--text-primary)] uppercase tracking-tight">Registro conductor DHL</h2>
+        <h2 className="text-2xl font-black text-[var(--text-primary)] uppercase tracking-tight">Registro conductor AKSYS</h2>
         <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-2">
           Demoras detectadas: {visibleDelays.length} · Pendientes de validar: {pendingDelays.length}
         </p>

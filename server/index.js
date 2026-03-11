@@ -9,7 +9,9 @@ const port = Number(process.env.PORT || 4000);
 const DEFAULT_BUSINESS_DAYS = 5;
 const DEFAULT_TRUCK_CAPACITY = 40;
 const DEFAULT_SUPPLIER_DAILY_INCREASE = 30;
-const DEFAULT_DEMAND_PESSIMISM_FACTOR = 1.35;
+const DEFAULT_DEMAND_PESSIMISM_FACTOR = 1.1;
+const DEFAULT_CARRIED_DEFICIT_FACTOR = 0.35;
+const DEFAULT_ZONE_BUFFER_TARGET_HOURS = 3;
 
 app.use(cors());
 app.use(express.json());
@@ -363,6 +365,20 @@ app.post("/api/simulation/projection", async (req, res, next) => {
         state.stockSupplier += supplierDailyIncrease;
       }
 
+      // Pre-position a practical zone buffer (yellow band target) using supplier stock.
+      // This avoids dashboards collapsing to full-red when stock exists but is only at supplier.
+      for (const state of partStates) {
+        if (state.currentSaldo < 0 || state.usedTemplate <= 0) continue;
+        const demandPerHourTemplate = state.usedTemplate / 23;
+        if (!Number.isFinite(demandPerHourTemplate) || demandPerHourTemplate <= 0) continue;
+        const targetZoneBuffer = Math.ceil(demandPerHourTemplate * DEFAULT_ZONE_BUFFER_TARGET_HOURS);
+        const zoneGap = Math.max(0, targetZoneBuffer - state.stockZone);
+        if (zoneGap <= 0 || state.stockSupplier <= 0) continue;
+        const movedToZone = Math.min(zoneGap, state.stockSupplier);
+        state.stockZone += movedToZone;
+        state.stockSupplier -= movedToZone;
+      }
+
       const dayMetaByPartZoneId = new Map(
         partStates.map((state) => [
           state.partZoneId,
@@ -423,11 +439,13 @@ app.post("/api/simulation/projection", async (req, res, next) => {
           : 0;
         const demandPerHour = usedThatDay > 0 ? usedThatDay / 23 : null;
         const carriedDeficit = Math.max(0, -state.currentSaldo);
+        // Avoid runaway compounding across projected days while still carrying pending deficit.
+        const carriedDeficitImpact = Math.ceil(carriedDeficit * DEFAULT_CARRIED_DEFICIT_FACTOR);
         const dayMeta = dayMetaByPartZoneId.get(state.partZoneId);
         const stockZoneStart = dayMeta?.stockZoneStart ?? state.stockZone;
         const coverageHours = demandPerHour ? stockZoneStart / demandPerHour : null;
         const totalBeforeUse = state.stockZone + state.stockSupplier;
-        const totalDemand = carriedDeficit + usedThatDay;
+        const totalDemand = carriedDeficitImpact + usedThatDay;
         const saldo = totalBeforeUse - totalDemand;
 
         let remainingUse = totalDemand;

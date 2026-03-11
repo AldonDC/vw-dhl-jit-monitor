@@ -3,10 +3,12 @@ import { motion } from 'framer-motion';
 import { Route as RouteIcon, MapPin, Clock, Gauge, Play, Pause, RotateCcw, RefreshCw } from 'lucide-react';
 import type {
     InventoryProjectionPlan,
+    RouteSimulationSyncDetail,
     RouteDelayAssignment,
     SimulationProjectedCycleLoad,
     SimulationRouteRow
 } from '../types';
+import { ROUTE_SIMULATION_SYNC_EVENT } from '../types';
 
 interface MetricBoxProps {
     label: string;
@@ -397,6 +399,28 @@ export const RouteCycles: React.FC<RouteCyclesProps> = ({
         return buildDelayKey(activeServiceDate, selectedRoute.id);
     }, [selectedRoute, activeServiceDate]);
 
+    useEffect(() => {
+        const detail: RouteSimulationSyncDetail = {
+            isPlaying,
+            progress,
+            cycleNumber: selectedRoute?.cycleNumber ?? null,
+            routeCode: selectedRoute?.routeCode ?? null,
+            supplierName: selectedRoute?.supplierName ?? null,
+            logisticZoneLabel: selectedRoute?.logisticZoneLabel ?? null,
+            serviceDate: activeServiceDate,
+            eventDelayMinutes: selectedDelay?.minutes ?? 0,
+            carriedDelayMinutes: selectedTiming?.carriedDelayMinutes ?? 0,
+            totalDelayMinutes: selectedTiming?.totalDelayMinutes ?? 0,
+            delayLabel: selectedDelay?.eventLabel?.trim()
+                ? selectedDelay.eventLabel
+                : selectedDelay
+                    ? 'Motivo pendiente de validar'
+                    : null,
+        };
+        (window as Window & { __routeSimulationSync?: RouteSimulationSyncDetail }).__routeSimulationSync = detail;
+        window.dispatchEvent(new CustomEvent<RouteSimulationSyncDetail>(ROUTE_SIMULATION_SYNC_EVENT, { detail }));
+    }, [isPlaying, progress, selectedRoute, activeServiceDate, selectedDelay, selectedTiming]);
+
     const timelineSteps = useMemo<TimelineStep[]>(() => {
         if (!selectedRoute) return [];
         const carriedDelay = selectedTiming?.carriedDelayMinutes ?? 0;
@@ -650,7 +674,7 @@ export const RouteCycles: React.FC<RouteCyclesProps> = ({
                             Ruta {selectedRoute?.routeCode ?? '---'} · {selectedRoute?.supplierName ?? 'Sin datos'}
                         </h2>
                         <div className="flex items-center gap-2 mt-2">
-                            <span className="text-[10px] text-blue-600 font-black uppercase tracking-[0.3em]">Simulacion</span>
+                            <span className="text-[10px] text-blue-600 font-black uppercase tracking-[0.3em]">Simulación</span>
                             <div className="w-1 h-1 rounded-full bg-slate-300"></div>
                             <span className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em]">
                                 {displayServiceDate ? formatDate(displayServiceDate) : 'Sin fecha'}
@@ -809,7 +833,7 @@ export const RouteCycles: React.FC<RouteCyclesProps> = ({
 
                 <div className="space-y-3">
                     <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
-                        <span>Duracion total simulacion</span>
+                        <span>Duración total simulación</span>
                         <span className="text-blue-600">{simulationDurationLabel}</span>
                     </div>
                     <input
