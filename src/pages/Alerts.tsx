@@ -190,7 +190,7 @@ export const Alerts: React.FC<AlertsProps> = ({ generatedAlerts = [], projection
         {productionAlerts.length === 0 ? (
           <div className="glass-card rounded-[2rem] p-8 border border-[var(--border-color)]">
             <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[var(--text-secondary)]">
-              Sin alertas de produccion con los umbrales actuales (amarillo: ventana 3 hrs con entrega, rojo: menor a 2 hrs).
+              Sin alertas de producción con los umbrales actuales (amarillo: ventana 3 hrs con entrega, rojo: menor a 2 hrs).
             </p>
           </div>
         ) : (
