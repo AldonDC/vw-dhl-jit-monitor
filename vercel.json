@@ -1,16 +1,9 @@
 {
   "version": 2,
-  "name": "jit-control-tower",
-  "builds": [
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
-    }
-  ],
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/$1"
+      "destination": "/index.html"
     }
   ]
 }
