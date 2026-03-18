@@ -12,7 +12,6 @@ import { ExcelUpload } from './components/ExcelUpload';
 import { SidebarAuth } from './components/SidebarAuth';
 
 // Page Imports
-import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { RouteCycles } from './pages/RouteCycles';
 import { Geolocation } from './pages/Geolocation';
@@ -20,11 +19,9 @@ import { Alerts } from './pages/Alerts';
 import { Simulation } from './pages/Simulation';
 import { DriverPortal } from './pages/DriverPortal';
 import { Reportes } from './pages/Reportes';
-import { useAuth } from './contexts/AuthContext';
 
 const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
-  const { user, loading: authLoading, isConfigured } = useAuth();
 
   // Hooks siempre en el mismo orden (no early return antes de estos)
   const [activePage, setActivePage] = useState('torre');
@@ -42,22 +39,6 @@ const App: React.FC = () => {
   useEffect(() => {
     setVisibleDelayKeys((prev) => prev.filter((key) => key in delayAssignments));
   }, [delayAssignments]);
-
-  // Login al inicio cuando Supabase está configurado y no hay sesión
-  if (isConfigured && authLoading) {
-    return (
-      <div className={`min-h-screen w-full flex items-center justify-center bg-[var(--bg-main)] ${theme === 'dark' ? 'dark' : ''}`}>
-        <div className="w-10 h-10 border-2 border-[#001e50] dark:border-blue-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-  if (isConfigured && !user) {
-    return (
-      <div className={theme === 'dark' ? 'dark' : ''}>
-        <Login />
-      </div>
-    );
-  }
 
   const getTurno = () => {
     const hr = currentTime.getHours();

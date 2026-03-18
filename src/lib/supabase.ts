@@ -1,7 +1,6 @@
 /**
- * Cliente de Supabase (complemento al backend Express).
- * Se usa solo en el frontend para Auth (y opcionalmente Realtime/Storage).
- * El backend (server/) no se modifica; sigue sirviendo la API con Prisma + SQLite.
+ * Cliente de Supabase para frontend (Auth y posibles features de Storage/Realtime).
+ * El backend corre por separado en server/ y usa Prisma contra Postgres (Supabase).
  * Si no hay URL/key en .env, no se crea el cliente (evita pantalla en blanco).
  */
 
