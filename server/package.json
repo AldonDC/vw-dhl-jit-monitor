@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "node index.js",
     "start": "node index.js",
+    "prisma:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:push": "prisma db push",
     "test": "echo \"Error: no test specified\" && exit 1",
     "import:reto2": "node scripts/import-reto2.js"
   },

@@ -1,34 +1,50 @@
-# Supabase en JIT Monitor (complemento al backend)
+# Supabase en JIT Monitor (backend + frontend)
 
-Supabase se usa **solo en el frontend** como complemento al backend Express existente. El backend (`server/`) **no se modifica**: sigue sirviendo la API con Prisma y SQLite (reportes, simulación, predicción, etc.).
+Este proyecto ahora usa **Supabase PostgreSQL** como base de datos del backend (`server/`) en lugar de SQLite.
 
-## Rol de Supabase
+## 1) Backend (Prisma + Supabase Postgres)
 
-- **Auth**: inicio y cierre de sesión en la app (email/contraseña). La sesión se guarda en el navegador; el resto de la app sigue funcionando igual con o sin sesión.
-- **Futuro opcional**: base de datos en la nube (Postgres), Realtime, Storage o backups sin sustituir la API actual.
+El backend Express sigue igual en lógica y endpoints, pero Prisma apunta a Postgres.
 
-## Configuración
+### Variables requeridas en `server/.env`
 
-1. Crea un proyecto en [supabase.com](https://supabase.com) (Dashboard → New project).
-2. En **Project Settings → API** copia:
-   - **Project URL**
-   - **anon public** (clave pública)
-3. En la raíz del repo crea un archivo `.env` (o edita el existente) con:
+```env
+DATABASE_URL="postgresql://postgres:TU_PASSWORD@db.TU_PROJECT_REF.supabase.co:5432/postgres?sslmode=require"
+PORT=4000
+```
 
-   ```env
-   VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
-   VITE_SUPABASE_ANON_KEY=eyJ...
-   ```
+### Crear tablas (elige una sola opción)
 
-4. Reinicia el servidor de desarrollo (`npm run dev`).
+Opción A (recomendada): usar migraciones Prisma.
 
-Si no configuras estas variables, la app funciona igual; el bloque "Sesión (Supabase)" en el sidebar no se mostrará.
+```bash
+cd server
+npx prisma generate
+npx prisma migrate deploy
+npm run import:reto2
+```
 
-## Uso en la app
+Opción B: crear tablas manualmente en SQL Editor.
 
-- Con Supabase configurado, en el sidebar aparece el bloque **Sesión (Supabase)**.
-- Puedes **registrar** usuarios desde el Dashboard de Supabase (Authentication → Users → Add user) o habilitar registro en Authentication → Providers → Email.
-- **Iniciar sesión**: escribe correo y contraseña en el sidebar y pulsa "Iniciar sesión".
-- **Cerrar sesión**: botón "Cerrar sesión" en el mismo bloque.
+1. Abre Supabase -> SQL Editor.
+2. Ejecuta el SQL de [server/prisma/supabase_schema.sql](./server/prisma/supabase_schema.sql).
+3. Después ejecuta solo:
 
-Las llamadas a la API (reportes, simulación, etc.) siguen yendo al backend Express; Supabase solo gestiona la identidad del usuario en el frontend. Si más adelante quieres que el backend verifique el JWT de Supabase en rutas protegidas, se puede añadir sin cambiar la lógica de negocio existente.
+```bash
+cd server
+npx prisma generate
+npm run import:reto2
+```
+
+> Nota: el importador `import:reto2` carga los datos JIT desde `Archivos_Reto2/BESI JIS AKSYS CW 09.xlsx`.
+
+## 2) Frontend (Supabase Auth)
+
+Si quieres mantener autenticación en frontend con Supabase:
+
+```env
+VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
+VITE_SUPABASE_ANON_KEY=tu_publishable_key
+```
+
+Si estas variables no están definidas, la app sigue funcionando, solo oculta el bloque de sesión.
